@@ -22,7 +22,7 @@ import authRoutes from "./routes/auth.js";
 import adminRoutes from "./routes/admin.js";
 import pipelineRoutes from "./routes/pipeline.js";
 
-dotenv.config();
+
 
 const app = express();
 const PORT = process.env.PORT || 4000;

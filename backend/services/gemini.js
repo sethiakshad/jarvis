@@ -1,8 +1,8 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// Initialize the API using API key from .env
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY_MANIM_CODE });
-const model = 'gemini-1.5-pro'; // Can be swapped
+// Initialize the API using API key from .env (trimmed for safety)
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY_MANIM_CODE?.trim());
+const modelInstance = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
 /**
  * Checks if the content is valid educational/STEM material.
@@ -27,12 +27,11 @@ INVALID
 Content:
 ${text}`;
 
-    const response = await ai.models.generateContent({
-        model: model,
-        contents: prompt
-    });
+    const result = await modelInstance.generateContent(prompt);
+    const response = await result.response;
+    const responseText = response.text();
     
-    return response.text.trim().toUpperCase() === 'VALID';
+    return responseText.trim().toUpperCase() === 'VALID';
 }
 
 /**
@@ -69,12 +68,9 @@ STRICT OUTPUT FORMAT (JSON ONLY, NO EXTRA TEXT):
 Text:
 ${text}`;
 
-    const response = await ai.models.generateContent({
-        model: model,
-        contents: prompt
-    });
-
-    let rawText = response.text.trim();
+    const result = await modelInstance.generateContent(prompt);
+    const response = await result.response;
+    const rawText = response.text().trim();
     
     // Strict Markdown stripping
     const cleanText = rawText.replace(/```json|```/g, "");
@@ -109,12 +105,10 @@ Return ONLY Python code. No explanations.
 Scene:
 ${JSON.stringify(scene)}`;
 
-    const response = await ai.models.generateContent({
-        model: model,
-        contents: prompt
-    });
-
-    let code = response.text.trim();
+    const result = await modelInstance.generateContent(prompt);
+    const response = await result.response;
+    let code = response.text().trim();
+    
     // In case code is wrapped in markdown
     code = code.replace(/```python|```/g, "").trim();
     return code;
@@ -147,12 +141,10 @@ ${error}
 Code:
 ${code}`;
 
-    const response = await ai.models.generateContent({
-        model: model,
-        contents: prompt
-    });
-
-    let fixedCode = response.text.trim();
+    const result = await modelInstance.generateContent(prompt);
+    const response = await result.response;
+    let fixedCode = response.text().trim();
+    
     fixedCode = fixedCode.replace(/```python|```/g, "").trim();
     return fixedCode;
 }

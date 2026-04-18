@@ -18,20 +18,47 @@ const itemVariants = {
 const Register = () => {
   const [formData, setFormData] = useState({ name: '', email: '', password: '', confirm: '' });
   const [focusedId, setFocusedId] = useState(null);
-  const [status, setStatus] = useState('idle'); // idle, loading, success
+  const [status, setStatus] = useState('idle'); // idle, loading, success, error
+  const [errorMsg, setErrorMsg] = useState('');
   const navigate = useNavigate();
 
-  const handleRegister = (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
+    if (formData.password !== formData.confirm) return;
+
     setStatus('loading');
     
-    // Simulate complex registration workflow
-    setTimeout(() => {
+    try {
+      const BACKEND_SERVER = import.meta.env.VITE_BACKEND_SERVER || 'http://localhost:4000';
+      const res = await fetch(`${BACKEND_SERVER}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          password: formData.password,
+          // You could collect institute here if you add a field for it
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setErrorMsg(data.message || 'Registration failed.');
+        setStatus('error');
+        setTimeout(() => setStatus('idle'), 2500);
+        return;
+      }
+
       setStatus('success');
       setTimeout(() => {
-        navigate('/login'); // Redirect to login on success
+        navigate('/login');
       }, 2000);
-    }, 3000);
+    } catch (err) {
+      setErrorMsg('Unable to connect to server.');
+      setStatus('error');
+      setTimeout(() => setStatus('idle'), 2500);
+    }
   };
 
   return (
@@ -194,6 +221,12 @@ const Register = () => {
               <p style={{ color: 'var(--neon-error)', fontSize: '0.8rem', position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)' }}>Mismatch</p>
             )}
           </motion.div>
+
+          {status === 'error' && (
+            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ color: 'var(--neon-error)', fontSize: '0.85rem', textAlign: 'center', marginTop: '-0.5rem' }}>
+              Registration Failed. {errorMsg}
+            </motion.p>
+          )}
 
           <motion.div variants={itemVariants} style={{ marginTop: '1.5rem' }}>
             <motion.button 

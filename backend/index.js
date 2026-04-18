@@ -20,6 +20,7 @@ import Agent from "./models/Agent.js";
 // Route imports
 import authRoutes from "./routes/auth.js";
 import adminRoutes from "./routes/admin.js";
+import pipelineRoutes from "./routes/pipeline.js";
 
 dotenv.config();
 
@@ -33,6 +34,10 @@ app.use(express.json());
 // API Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/pipeline", pipelineRoutes);
+
+// Serve videos statically
+app.use("/videos", express.static("temp/videos"));
 
 // MongoDB Connection
 const connectDB = async () => {

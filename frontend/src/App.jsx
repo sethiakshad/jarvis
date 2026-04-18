@@ -20,7 +20,7 @@ import Home from './components/Home';
 // Navbar Component
 const Navbar = () => {
   return (
-    <motion.nav 
+    <motion.nav
       initial={{ y: -100 }}
       animate={{ y: 0 }}
       transition={{ duration: 0.8, ease: "easeOut" }}
@@ -35,9 +35,9 @@ const Navbar = () => {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <Cpu size={28} color="var(--neon-cyan)" />
-        <span style={{ 
-          fontFamily: "'Space Grotesk', sans-serif", 
-          fontWeight: 800, 
+        <span style={{
+          fontFamily: "'Space Grotesk', sans-serif",
+          fontWeight: 800,
           fontSize: '1.4rem',
           letterSpacing: '1px'
         }} className="text-gradient">
@@ -45,9 +45,9 @@ const Navbar = () => {
         </span>
       </div>
       <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
-        <a href="#pipeline" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 500, transition: 'color 0.3s' }} onMouseOver={e => e.target.style.color='var(--neon-cyan)'} onMouseOut={e => e.target.style.color='var(--text-muted)'}>Pipeline</a>
-        <a href="#generator" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 500, transition: 'color 0.3s' }} onMouseOver={e => e.target.style.color='var(--neon-cyan)'} onMouseOut={e => e.target.style.color='var(--text-muted)'}>Scene Demo</a>
-        <button className="btn-primary" style={{ padding: '8px 20px' }} onClick={() => window.location.href='/login'}>System Logout</button>
+        <a href="#pipeline" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 500, transition: 'color 0.3s' }} onMouseOver={e => e.target.style.color = 'var(--neon-cyan)'} onMouseOut={e => e.target.style.color = 'var(--text-muted)'}>Pipeline</a>
+        <a href="#generator" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 500, transition: 'color 0.3s' }} onMouseOver={e => e.target.style.color = 'var(--neon-cyan)'} onMouseOut={e => e.target.style.color = 'var(--text-muted)'}>Scene Demo</a>
+        <button className="btn-primary" style={{ padding: '8px 20px' }} onClick={() => window.location.href = '/'}>System Logout</button>
       </div>
     </motion.nav>
   );
@@ -68,7 +68,7 @@ const Dashboard = () => {
       animate={{ opacity: 1, transition: { duration: 0.8 } }}
       exit={{ opacity: 0, y: 50, transition: { duration: 0.5 } }}
     >
-      <motion.div 
+      <motion.div
         style={{
           position: 'fixed', top: 0, left: 0, right: 0, height: '3px',
           background: 'linear-gradient(90deg, var(--neon-cyan), var(--neon-blue), var(--neon-violet))',
@@ -100,7 +100,7 @@ const Dashboard = () => {
 // Inner App with Routing & AnimatePresence
 const AnimatedRoutes = () => {
   const location = useLocation();
-  
+
   return (
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>

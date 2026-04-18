@@ -1,17 +1,79 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { UploadCloud, File, Activity, Search } from 'lucide-react';
+import { UploadCloud, File, Activity, Search, CheckCircle, AlertCircle } from 'lucide-react';
 
 const UploadSection = () => {
   const [isHovered, setIsHovered] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  
+  // Pipeline State
+  const fileInputRef = useRef(null);
+  const [jobId, setJobId] = useState(null);
+  const [status, setStatus] = useState(''); // 'processing', 'done', 'error'
+  const [videoUrl, setVideoUrl] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
-  const handleUpload = () => {
+  // Handle actual file selection
+  const handleFileChange = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
     setIsUploading(true);
-    setTimeout(() => {
+    setStatus('processing');
+    setJobId(null);
+    setVideoUrl('');
+    setErrorMsg('');
+
+    const formData = new FormData();
+    formData.append('document', file);
+
+    try {
+      // Assuming backend runs on 4000
+      const res = await fetch('http://localhost:4000/api/pipeline/generate', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to start generation');
+      setJobId(data.jobId);
+    } catch (err) {
+      setStatus('error');
+      setErrorMsg(err.message);
       setIsUploading(false);
-    }, 3000);
+    }
   };
+
+  const handleBoxClick = () => {
+    if (!isUploading && fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  // Polling Effect
+  useEffect(() => {
+    let interval;
+    if (jobId && status === 'processing') {
+      interval = setInterval(async () => {
+        try {
+          const res = await fetch(`http://localhost:4000/api/pipeline/status/${jobId}`);
+          const data = await res.json();
+          if (data.status === 'done') {
+            setStatus('done');
+            setIsUploading(false);
+            setVideoUrl(`http://localhost:4000${data.videoUrl}`);
+          } else if (data.status === 'error') {
+            setStatus('error');
+            setIsUploading(false);
+            setErrorMsg(data.error || 'Server processing error');
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [jobId, status]);
+
 
   return (
     <section>
@@ -27,16 +89,23 @@ const UploadSection = () => {
           whileHover={{ scale: 1.02 }}
           onHoverStart={() => setIsHovered(true)}
           onHoverEnd={() => setIsHovered(false)}
-          onClick={handleUpload}
+          onClick={handleBoxClick}
           style={{
             padding: '4rem 2rem',
             textAlign: 'center',
-            cursor: 'pointer',
+            cursor: isUploading ? 'default' : 'pointer',
             border: isHovered ? '1px solid var(--neon-blue)' : '1px solid var(--glass-border)',
             position: 'relative'
           }}
         >
-          {isHovered && (
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileChange} 
+            accept=".pdf,.doc,.docx,.ppt,.pptx,.txt" 
+            style={{ display: 'none' }} 
+          />
+          {isHovered && !isUploading && (
             <motion.div 
               layoutId="glowBorder"
               style={{
@@ -48,7 +117,7 @@ const UploadSection = () => {
           )}
 
           <AnimatePresence mode="wait">
-            {!isUploading ? (
+            {!isUploading && status !== 'done' && status !== 'error' ? (
               <motion.div
                 key="uploadData"
                 initial={{ opacity: 0 }}
@@ -75,6 +144,45 @@ const UploadSection = () => {
                   </motion.div>
                 </div>
               </motion.div>
+            ) : status === 'done' ? (
+              <motion.div
+                key="done"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+              >
+                <CheckCircle size={50} color="#00ffcc" style={{ marginBottom: '1rem' }} />
+                <h3 style={{ fontSize: '1.4rem', color: '#00ffcc' }}>Generation Complete</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1rem' }}>Your Manim video is ready.</p>
+                <video 
+                  controls 
+                  src={videoUrl} 
+                  style={{ width: '100%', maxWidth: '300px', borderRadius: '8px', boxShadow: '0 4px 15px rgba(0,0,0,0.3)' }}
+                />
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setStatus(''); setVideoUrl(''); }}
+                  style={{ marginTop: '1rem', padding: '8px 16px', background: 'transparent', border: '1px solid #00ffcc', color: '#00ffcc', borderRadius: '20px', cursor: 'pointer' }}
+                >
+                  Generate Another
+                </button>
+              </motion.div>
+            ) : status === 'error' ? (
+              <motion.div
+                key="error"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+              >
+                <AlertCircle size={50} color="#ff3366" style={{ marginBottom: '1rem' }} />
+                <h3 style={{ fontSize: '1.4rem', color: '#ff3366' }}>Generation Failed</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem', wordBreak: 'break-word' }}>{errorMsg}</p>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setStatus(''); setErrorMsg(''); }}
+                  style={{ marginTop: '1rem', padding: '8px 16px', background: 'transparent', border: '1px solid #ff3366', color: '#ff3366', borderRadius: '20px', cursor: 'pointer' }}
+                >
+                  Try Again
+                </button>
+              </motion.div>
             ) : (
               <motion.div
                 key="analyzing"
@@ -84,7 +192,8 @@ const UploadSection = () => {
                 style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}
               >
                 <Activity size={50} color="var(--neon-violet)" style={{ marginBottom: '1rem' }} />
-                <h3 style={{ fontSize: '1.4rem', color: 'var(--neon-violet)' }} className="text-neon">AI Analyzing...</h3>
+                <h3 style={{ fontSize: '1.4rem', color: 'var(--neon-violet)' }} className="text-neon">Pipeline Executing...</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.5rem' }}>Extracting text & generating Manim code (Job: {jobId?.substring(0,6)}...)</p>
                 <div style={{ display: 'flex', gap: '4px', marginTop: '1.5rem' }}>
                   {[...Array(5)].map((_, i) => (
                     <motion.div 

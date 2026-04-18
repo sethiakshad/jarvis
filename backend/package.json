@@ -1,0 +1,13 @@
+{
+  "name": "ultron",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "npm run dev",
+    "test": "npm run dev"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": ""
+}

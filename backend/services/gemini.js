@@ -1,7 +1,8 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Initialize the API using API key from .env (trimmed for safety)
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY_MANIM_CODE?.trim());
+const apiKey = process.env.GEMINI_API_KEY_MANIM_CODE?.trim();
+const genAI = new GoogleGenerativeAI(apiKey);
 
 // Model configs
 const jsonModel = genAI.getGenerativeModel({ 
@@ -12,6 +13,25 @@ const jsonModel = genAI.getGenerativeModel({
 const codeModel = genAI.getGenerativeModel({ 
     model: 'gemini-2.5-flash' 
 });
+
+// Diagnostic check to verify key and model availability
+(async function testConnection() {
+    console.log(`[Gemini] Initializing with key: ${apiKey?.substring(0, 7)}...`);
+    try {
+        // Try a very simple prompt to verify model/key
+        const testModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        const result = await testModel.generateContent("ping");
+        const response = await result.response;
+        console.log(`[Gemini] Connection successful. Model 'gemini-2.5-flash' is reachable.`);
+    } catch (error) {
+        console.error(`[Gemini] Diagnostic failed:`, error.message);
+        if (error.message?.includes('API key not valid')) {
+            console.error(`[Gemini] CRITICAL: The API key provided is rejected by Google. Please check your .env file.`);
+        } else if (error.status === 503 || error.message?.includes('503')) {
+            console.warn(`[Gemini] WARNING: Model 'gemini-2.5-flash' returned 503 Service Unavailable. This model might be overloaded or deprecated.`);
+        }
+    }
+})();
 
 /**
  * Helper to call Gemini with retry logic for 429 rate limits.

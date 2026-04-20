@@ -34,7 +34,7 @@ const ImpactSection = () => {
     <section style={{ paddingBottom: '4rem' }}>
       <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
         <h2 style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>The <span className="text-gradient">Impact</span></h2>
-        <p style={{ color: 'var(--text-muted)' }}>Metrics from the J.A.R.V.I.S execution log.</p>
+        <p style={{ color: 'var(--text-muted)' }}>Metrics from The Good Ultron execution log.</p>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>

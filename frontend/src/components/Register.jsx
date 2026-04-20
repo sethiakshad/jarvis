@@ -122,7 +122,7 @@ const Register = () => {
 
         <motion.div variants={itemVariants} style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
           <h2 style={{ fontSize: '1.8rem', letterSpacing: '1px' }}>Initialize <span style={{ color: 'var(--neon-violet)' }}>New User</span></h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem' }}>Establish connection parameters to access J.A.R.V.I.S.</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem' }}>Establish connection parameters to access The Good Ultron.</p>
         </motion.div>
 
         <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>

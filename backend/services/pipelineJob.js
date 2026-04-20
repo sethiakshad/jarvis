@@ -32,7 +32,8 @@ export async function startPipelineJob(jobId, buffer) {
         console.error(`[Job ${jobId}] Pipeline failed:`, error);
         jobsStore[jobId] = {
             status: "error",
-            error: error.message
+            error: error.message,
+            timestamp: new Date().toISOString()
         };
     } finally {
         activeJobs--;
@@ -73,7 +74,8 @@ async function runPipeline(jobId, buffer) {
     try {
         scenes = await generateScenes(text);
     } catch (e) {
-        throw new Error('Failed to parse Gemini scene representation as valid JSON. Raw API response may have strayed.');
+        console.error(`[Job ${jobId}] Scene generation error:`, e);
+        throw new Error(`Gemini Pipeline Error: ${e.message}`);
     }
 
     if (!Array.isArray(scenes) || scenes.length === 0) {
@@ -95,6 +97,9 @@ async function runPipeline(jobId, buffer) {
         // Run and potentially auto-fix
         await runManimCodeWithRetry(code, scene, jobId);
         
+        // Small delay to allow OS to release file handles before next scene or merging
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
         // The runner logic enforces that output goes to `temp/videos/{jobId}/scene{scene_id}.mp4`
         const expectedVideoOutput = path.join(jobDir, `scene${scene.scene_id}.mp4`);
         if (fs.existsSync(expectedVideoOutput)) {
@@ -112,7 +117,8 @@ async function runPipeline(jobId, buffer) {
     // 6. Complete
     jobsStore[jobId] = {
         status: "done",
-        videoUrl: `/videos/${jobId}/final.mp4`
+        videoUrl: `/videos/${jobId}/final.mp4`,
+        completedAt: new Date().toISOString()
     };
     console.log(`[Job ${jobId}] Pipeline complete. Accessible at /videos/${jobId}/final.mp4`);
 }

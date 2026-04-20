@@ -28,8 +28,12 @@ const UploadSection = () => {
     formData.append('document', file);
 
     try {
-      // Assuming backend runs on 4000
-      const res = await fetch('http://localhost:4000/api/pipeline/generate', {
+      // Use environment variable for backend server
+      const backendUrl = import.meta.env.VITE_BACKEND_SERVER.endsWith('/') 
+        ? import.meta.env.VITE_BACKEND_SERVER 
+        : `${import.meta.env.VITE_BACKEND_SERVER}/`;
+
+      const res = await fetch(`${backendUrl}api/pipeline/generate`, {
         method: 'POST',
         body: formData
       });
@@ -55,12 +59,16 @@ const UploadSection = () => {
     if (jobId && status === 'processing') {
       interval = setInterval(async () => {
         try {
-          const res = await fetch(`http://localhost:4000/api/pipeline/status/${jobId}`);
+          const backendUrl = import.meta.env.VITE_BACKEND_SERVER.endsWith('/') 
+            ? import.meta.env.VITE_BACKEND_SERVER 
+            : `${import.meta.env.VITE_BACKEND_SERVER}/`;
+
+          const res = await fetch(`${backendUrl}api/pipeline/status/${jobId}`);
           const data = await res.json();
           if (data.status === 'done') {
             setStatus('done');
             setIsUploading(false);
-            setVideoUrl(`http://localhost:4000${data.videoUrl}`);
+            setVideoUrl(`${backendUrl.slice(0, -1)}${data.videoUrl}`);
           } else if (data.status === 'error') {
             setStatus('error');
             setIsUploading(false);

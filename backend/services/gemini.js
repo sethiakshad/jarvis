@@ -2,149 +2,150 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Initialize the API using API key from .env (trimmed for safety)
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY_MANIM_CODE?.trim());
-const modelInstance = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+// Model configs
+const jsonModel = genAI.getGenerativeModel({ 
+    model: 'gemini-2.5-flash',
+    generationConfig: { responseMimeType: 'application/json' }
+});
+
+const codeModel = genAI.getGenerativeModel({ 
+    model: 'gemini-2.5-flash' 
+});
+
+/**
+ * Helper to call Gemini with retry logic for 429 rate limits.
+ */
+async function withRetry(fn, taskName = "Gemini Call", maxRetries = 5) {
+    let lastError;
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            return await fn();
+        } catch (error) {
+            lastError = error;
+            const isRateLimit = error.status === 429 || 
+                               error.message?.includes('429') || 
+                               error.message?.includes('ResourceExhausted') ||
+                               error.message?.includes('Quota');
+
+            if (isRateLimit) {
+                // Determine delay: use provided retryDelay or fallback to exponential backoff
+                let delayMs = 10000 * Math.pow(2, i); // Start with 10s, then 20s, 40s...
+                
+                try {
+                    // Search for google.rpc.RetryInfo in the error details/links
+                    // The error object from @google/generative-ai can be deep
+                    const errorDetails = error.response?.error?.details || error.details || [];
+                    const retryInfo = errorDetails.find(d => d['@type']?.includes('RetryInfo') || d.description?.includes('RetryInfo'));
+                    
+                    if (retryInfo?.retryDelay) {
+                        // "48s" -> 48
+                        const seconds = parseInt(retryInfo.retryDelay);
+                        if (!isNaN(seconds)) {
+                            delayMs = (seconds * 1000) + 2000; // Add 2s safety buffer
+                        }
+                    } else if (error.links) {
+                        const linkRetry = error.links.find(l => l.description?.includes('RetryInfo'));
+                        if (linkRetry?.retryDelay) {
+                            const seconds = parseInt(linkRetry.retryDelay);
+                            if (!isNaN(seconds)) {
+                                delayMs = (seconds * 1000) + 2000;
+                            }
+                        }
+                    }
+                } catch (parseError) {
+                    console.error("[Gemini] Error parsing retry info:", parseError.message);
+                }
+
+                // Add jitter (±10%)
+                const jitter = delayMs * 0.1 * (Math.random() - 0.5);
+                const finalDelay = Math.max(1000, delayMs + jitter);
+
+                console.warn(`[${taskName}] Rate limited (429). Retrying in ${(finalDelay / 1000).toFixed(1)}s... (Attempt ${i + 1}/${maxRetries})`);
+                await new Promise(resolve => setTimeout(resolve, finalDelay));
+            } else {
+                // If not a rate limit error, throw immediately
+                throw error;
+            }
+        }
+    }
+    throw lastError;
+}
 
 /**
  * Checks if the content is valid educational/STEM material.
- * @param {string} text - The extracted PDF text
- * @returns {Promise<boolean>} Object with success property
  */
 export async function checkRelevance(text) {
-    const prompt = `You are a strict classifier.
-
-Task:
-Determine whether the following content is EDUCATIONAL/STEM.
-
-Rules:
-- VALID → if content contains concepts, explanations, formulas, or academic material
-- INVALID → if content is random text, memes, stories, ads, or non-educational
-
-Output format (STRICT):
-VALID
-OR
-INVALID
-
-Content:
-${text}`;
-
-    const result = await modelInstance.generateContent(prompt);
-    const response = await result.response;
-    const responseText = response.text();
-    
-    return responseText.trim().toUpperCase() === 'VALID';
+    return await withRetry(async () => {
+        const prompt = `Task: Determine if EDUCATIONAL/STEM. Output: {"valid": true} or {"valid": false}. Content: ${text}`;
+        const result = await jsonModel.generateContent(prompt);
+        const response = await result.response;
+        const json = JSON.parse(response.text());
+        return json.valid === true;
+    }, "Relevance Check");
 }
 
 /**
  * Generates max 4 scenes for Manim animation.
- * @param {string} text - Educational text
- * @returns {Promise<Array>} Array of scene objects
  */
 export async function generateScenes(text) {
-    const prompt = `You are an expert educational content structuring AI.
-
-Task:
-Convert the given text into SMALL, VISUALIZABLE scenes for Manim animation.
-
-Rules:
-- Each scene must represent ONE clear concept
-- Keep scenes SHORT (max 3-4 lines explanation)
-- Must be visually representable
-- No repetition
-- Maintain logical flow
-- Max 4 scenes ONLY
-
-STRICT OUTPUT FORMAT (JSON ONLY, NO EXTRA TEXT):
-
-[
-  {
-    "scene_id": 1,
-    "title": "Short title",
-    "concept": "Main concept",
-    "explanation": "Short explanation",
-    "visual_plan": "What animation should show"
-  }
-]
-
-Text:
-${text}`;
-
-    const result = await modelInstance.generateContent(prompt);
-    const response = await result.response;
-    const rawText = response.text().trim();
-    
-    // Strict Markdown stripping
-    const cleanText = rawText.replace(/```json|```/g, "");
-    
-    return JSON.parse(cleanText);
+    return await withRetry(async () => {
+        const prompt = `Task: Convert to JSON array of max 4 scenes. 
+        Rules: 
+        - scene_id MUST be an integer (1, 2, 3, 4).
+        - Keys: scene_id, title, concept, explanation, visual_plan. 
+        Text: ${text}`;
+        const result = await jsonModel.generateContent(prompt);
+        const response = await result.response;
+        return JSON.parse(response.text());
+    }, "Scene Generation");
 }
 
 /**
  * Generates Manim executable code for one scene.
- * @param {Object} scene - The scene object
- * @returns {Promise<string>} The generated Python code
  */
 export async function generateManimCode(scene) {
-    const sceneId = scene.scene_id;
-    const prompt = `You are a ManimCE expert.
-
-Task:
-Generate valid ManimCE Python code for the given scene.
-
-STRICT RULES:
-- Use Manim Community Edition syntax ONLY
-- One class named Scene${sceneId}
-- Must inherit from Scene
-- No external libraries
-- Use only standard Manim objects (Text, MathTex, Circle, Arrow, etc.)
-- Code MUST run without modification
-- Keep animation simple and clean
-
-OUTPUT:
-Return ONLY Python code. No explanations.
-
-Scene:
-${JSON.stringify(scene)}`;
-
-    const result = await modelInstance.generateContent(prompt);
-    const response = await result.response;
-    let code = response.text().trim();
-    
-    // In case code is wrapped in markdown
-    code = code.replace(/```python|```/g, "").trim();
-    return code;
+    return await withRetry(async () => {
+        const prompt = `Task: Generate ManimCE codebase for Scene${scene.scene_id}. 
+        STRICT RULES:
+        - Use ONLY standard Manim Community Edition library.
+        - FORBIDDEN: Do not use 'Grid', 'SVGMobject', or any external assets/files.
+        - FORBIDDEN: Do not use 'self.mobjects' or '*self.mobjects' in animations.
+        - Use basic mobjects: Text, MathTex, Circle, Square, Arrow, Line, NumberPlane.
+        - Use 'VGroup()' for standard collections of mobjects (Text, MathTex, Circle, Square, Arrow, Line, NumberPlane) as they are VMobjects and required for animations like 'Create' and 'Write'.
+        - LAYOUT: Never overlap text. If placing items inside a box, ensure the box label (e.g., 'AGENT') is placed ABOVE or BELOW the internal components, or fades out before they appear.
+        - SPACING: Use 'arrange(DOWN, buff=0.4)' or similar to provide breathable spacing.
+        - AESTHETICS: Use a distinct, vibrant color palette (e.g., BLUE, GREEN, TEAL, GOLD). Ensure font sizes are readable (default 36-48 for titles, 24-30 for labels).
+        - COMPATIBILITY: Use 'fill_opacity=' instead of 'opacity=' for mobjects like Dot, Circle, and Square.
+        - class Scene${scene.scene_id}(Scene): ...
+        - Output ONLY Python code. No markdown.
+        Scene Info: ${JSON.stringify(scene)}`;
+        const result = await codeModel.generateContent(prompt);
+        const response = await result.response;
+        let code = response.text().trim();
+        return code.replace(/```python|```/g, "").trim();
+    }, `Code Gen Scene ${scene.scene_id}`);
 }
 
 /**
  * Fixes broken Manim code iteratively.
- * @param {string} error - The execution error
- * @param {string} code - The broken code
- * @returns {Promise<string>} The fixed Python code
  */
 export async function fixManimCode(error, code) {
-    const prompt = `You are a debugging expert for ManimCE.
-
-Task:
-Fix the given code so it runs without errors.
-
-Rules:
-- Preserve original logic
-- Fix syntax/import/runtime errors
-- Ensure compatibility with ManimCE
-- Do NOT add explanations
-
-OUTPUT:
-Return ONLY corrected Python code
-
-Error:
-${error}
-
-Code:
-${code}`;
-
-    const result = await modelInstance.generateContent(prompt);
-    const response = await result.response;
-    let fixedCode = response.text().trim();
-    
-    fixedCode = fixedCode.replace(/```python|```/g, "").trim();
-    return fixedCode;
+    return await withRetry(async () => {
+        const prompt = `Task: Fix this ManimCE error. 
+        Current Error: ${error}
+        STRICT RULES:
+        - If 'TypeError: Create only works for VMobjects', replace 'Group' with 'VGroup' and ensure all members are standard vector shapes/text.
+        - If 'TypeError: ... got an unexpected keyword argument \'opacity\'', replace 'opacity=' with 'fill_opacity=' or 'stroke_opacity=' (use fill_opacity for Dot, Circle, Square).
+        - If 'TypeError: ... got an unexpected keyword argument \'font_size\'', ensure it is only used with Text/MathTex.
+        - If NameError for 'Grid', use 'NumberPlane' instead.
+        - If FileNotFoundError, remove the asset-loading line entirely.
+        - Output ONLY corrected code. No explanations.
+        Broken Code:
+        ${code}`;
+        const result = await codeModel.generateContent(prompt);
+        const response = await result.response;
+        let fixedCode = response.text().trim();
+        return fixedCode.replace(/```python|```/g, "").trim();
+    }, "Code Fix");
 }

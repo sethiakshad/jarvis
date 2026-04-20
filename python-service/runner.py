@@ -5,12 +5,18 @@ import os
 import shutil
 
 def run_manim(file_path, scene_name, job_id):
-    # Determine absolute path to the generated videos
-    # The command requested: manim -pql file.py Scene{scene_id} --media_dir=temp/videos/{jobId}
-    media_dir = f"../backend/temp/videos/{job_id}"
+    # Dynamically locate FFmpeg in the backend node_modules
+    backend_node_modules = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend", "node_modules"))
+    ffmpeg_dir = os.path.join(backend_node_modules, "@ffmpeg-installer", "win32-x64")
     
-    # We want it strictly structured: manim -pql file.py SceneName --media_dir=...
-    command = ["manim", "-pql", file_path, scene_name, "--media_dir", media_dir]
+    if os.path.exists(ffmpeg_dir):
+        os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ["PATH"]
+
+    # Determine absolute path to the generated videos
+    media_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend", "temp", "videos", job_id, scene_name))
+    
+    # Use sys.executable -m manim for robustness
+    command = [sys.executable, "-m", "manim", "-pql", file_path, scene_name, "--media_dir", media_dir]
     
     try:
         # Run subprocess

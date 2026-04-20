@@ -55,7 +55,7 @@ const Hero = () => {
       >
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 16px', background: 'rgba(0, 210, 255, 0.1)', border: '1px solid var(--neon-blue)', borderRadius: '20px', marginBottom: '2rem' }}>
           <Sparkles size={16} color="var(--neon-blue)" />
-          <span style={{ color: 'var(--neon-blue)', fontSize: '0.85rem', fontWeight: 600, letterSpacing: '1px' }}>J.A.R.V.I.S MULTI-AGENT SYSTEM ACTIVATED</span>
+          <span style={{ color: 'var(--neon-blue)', fontSize: '0.85rem', fontWeight: 600, letterSpacing: '1px' }}>THE GOOD ULTRON MULTI-AGENT SYSTEM ACTIVATED</span>
         </div>
         
         <h1 style={{ 

@@ -41,7 +41,7 @@ const Navbar = () => {
           fontSize: '1.4rem',
           letterSpacing: '1px'
         }} className="text-gradient">
-          CineRAG AI
+          The Good Ultron
         </span>
       </div>
       <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>

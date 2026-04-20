@@ -40,7 +40,7 @@ const Home = () => {
         </motion.div>
         
         <motion.h1 variants={itemVariants} style={{ fontSize: '2.5rem', marginBottom: '1rem', letterSpacing: '2px' }}>
-          J.A.R.V.I.S <span style={{ color: 'var(--neon-cyan)' }}>Nexus</span>
+          The Good <span style={{ color: 'var(--neon-cyan)' }}>Ultron</span>
         </motion.h1>
         
         <motion.p variants={itemVariants} style={{ color: 'var(--text-muted)', fontSize: '1rem', marginBottom: '3rem', lineHeight: '1.6' }}>

@@ -122,7 +122,7 @@ const Login = () => {
                 <CheckCircle size={60} color="var(--neon-cyan)" style={{ marginBottom: '1rem', filter: 'drop-shadow(0 0 10px rgba(0, 255, 204, 0.8))' }} />
               </motion.div>
               <h3 className="text-neon" style={{ color: 'var(--neon-cyan)' }}>Access Granted</h3>
-              <p style={{ color: 'var(--text-main)', marginTop: '0.5rem', fontSize: '0.9rem' }}>Initializing J.A.R.V.I.S Dashboard...</p>
+              <p style={{ color: 'var(--text-main)', marginTop: '0.5rem', fontSize: '0.9rem' }}>Initializing The Good Ultron Dashboard...</p>
             </motion.div>
           )}
         </AnimatePresence>

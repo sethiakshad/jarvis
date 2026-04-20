@@ -29,11 +29,11 @@ function execPythonRunner(pyFilePath, sceneName, jobId) {
             stderrData += data.toString();
         });
 
-        // 20s timeout requirement
+        // 300s (5 min) timeout requirement. Manim rendering can be CPU intensive.
         const timeout = setTimeout(() => {
             child.kill();
-            resolve({ success: false, error: 'Execution timeout exceeded (20s).' });
-        }, 20000);
+            resolve({ success: false, error: 'Execution timeout exceeded (300s). Rendering this scene is taking longer than expected.' });
+        }, 300000);
 
         child.on('close', () => {
             clearTimeout(timeout);

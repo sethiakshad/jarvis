@@ -5,6 +5,10 @@ import { checkRelevance, generateScenes, generateManimCode } from './gemini.js';
 import { runManimCodeWithRetry } from './manimRunner.js';
 import { mergeVideos } from '../utils/videoMerger.js';
 import { generateFallbackVideo } from '../utils/fallbackVideoGenerator.js';
+import { syncAudioWithVideo } from './audioService.js';
+import { generateQuestionsFromText } from './questionService.js';
+import Question from '../models/Question.js';
+
 
 // Global Job Store
 export const jobsStore = {};
@@ -18,7 +22,9 @@ function updateJob(jobId, patch) {
     jobsStore[jobId] = { ...jobsStore[jobId], ...patch };
 }
 
-export async function startPipelineJob(jobId, buffer) {
+export async function startPipelineJob(jobId, buffer, numMcqs = 0, numShorts = 0) {
+
+
     if (activeJobs >= MAX_CONCURRENT_JOBS) {
         updateJob(jobId, { status: 'queued', statusMessage: 'Waiting in queue...' });
         jobQueue.push({ jobId, buffer });
@@ -28,7 +34,9 @@ export async function startPipelineJob(jobId, buffer) {
     try {
         activeJobs++;
         updateJob(jobId, { status: 'processing', statusMessage: 'Starting pipeline...' });
-        await runPipeline(jobId, buffer);
+        await runPipeline(jobId, buffer, numMcqs, numShorts);
+
+
     } catch (error) {
         console.error(`[Job ${jobId}] Pipeline failed:`, error);
         updateJob(jobId, {
@@ -50,7 +58,9 @@ function processNextInQueue() {
     }
 }
 
-async function runPipeline(jobId, buffer) {
+async function runPipeline(jobId, buffer, numMcqs = 0, numShorts = 0) {
+
+
     const jobDir = path.resolve(`./temp/videos/${jobId}`);
     if (!fs.existsSync(jobDir)) {
         fs.mkdirSync(jobDir, { recursive: true });
@@ -107,9 +117,31 @@ async function runPipeline(jobId, buffer) {
         const result = await runManimCodeWithRetry(code, scene, jobId);
 
         if (result.success) {
-            const videoFile = path.join(jobDir, `scene${scene.scene_id}.mp4`);
-            if (fs.existsSync(videoFile)) {
-                generatedVideoPaths.push(videoFile);
+            const rawVideoFile = path.join(jobDir, `scene${scene.scene_id}.mp4`);
+            if (fs.existsSync(rawVideoFile)) {
+                // ── Sync Audio (Narration) ──
+                const syncedVideoFile = path.join(jobDir, `scene${scene.scene_id}_synced.mp4`);
+                console.log(`[Job ${jobId}] Syncing audio for Scene${scene.scene_id}...`);
+                
+                try {
+                    const audioResult = await syncAudioWithVideo(rawVideoFile, scene.narration || "", syncedVideoFile);
+                    if (audioResult.success && fs.existsSync(syncedVideoFile)) {
+                        generatedVideoPaths.push(syncedVideoFile);
+                    } else {
+                        console.warn(`[Job ${jobId}] Audio sync failed for Scene${scene.scene_id}, trying to generate silent video with audio stream.`);
+                        // Try syncing with empty string to at least get an audio stream (fixed audio_handler handles this)
+                        const silentResult = await syncAudioWithVideo(rawVideoFile, "", syncedVideoFile);
+                        if (silentResult.success && fs.existsSync(syncedVideoFile)) {
+                            generatedVideoPaths.push(syncedVideoFile);
+                        } else {
+                            console.error(`[Job ${jobId}] Failed to generate even a silent synced video. Merge may fail.`);
+                            generatedVideoPaths.push(rawVideoFile);
+                        }
+                    }
+                } catch (audioErr) {
+                    console.error(`[Job ${jobId}] Audio sync error:`, audioErr.message);
+                    generatedVideoPaths.push(rawVideoFile);
+                }
             } else {
                 console.warn(`[Job ${jobId}] Scene${scene.scene_id} reported success but no mp4 found.`);
                 failedScenes.push(scene.scene_id);
@@ -148,7 +180,27 @@ async function runPipeline(jobId, buffer) {
         throw new Error('Final video was not created. Pipeline failed completely.');
     }
 
-    // ── Step 6: Done ──────────────────────────────────────────────────────────
+    // ── Step 7: Generate Questions (if requested) ───────────────────────────
+    let questionsGenerated = false;
+    if (numMcqs > 0 || numShorts > 0) {
+        try {
+            updateJob(jobId, { statusMessage: `Generating questions (${numMcqs} MCQ, ${numShorts} Short)...` });
+            console.log(`[Job ${jobId}] Generating questions (${numMcqs} MCQ, ${numShorts} Short)...`);
+            const questions = await generateQuestionsFromText(text, numMcqs, numShorts);
+            
+            await Question.create({
+                jobId,
+                questions
+            });
+            
+            console.log(`[Job ${jobId}] Questions generated successfully. Count: ${questions?.length || 0}`);
+            questionsGenerated = true;
+        } catch (qErr) {
+            console.error(`[Job ${jobId}] Question generation CRITICAL FAILURE:`, qErr);
+        }
+    }
+
+    // ── Step 8: Final Completion ─────────────────────────────────────────────
     const partial = failedScenes.length > 0 && generatedVideoPaths.length > 0;
     updateJob(jobId, {
         status: 'done',
@@ -160,8 +212,12 @@ async function runPipeline(jobId, buffer) {
                 ? 'Done (fallback video generated)'
                 : 'Done — all scenes rendered!',
         scenesRendered: generatedVideoPaths.length,
-        scenesTotal: scenes.length
+        scenesTotal: scenes.length,
+        questionsGenerated
     });
+
+
+
 
     console.log(`[Job ${jobId}] Complete → /videos/${jobId}/final.mp4`);
 }

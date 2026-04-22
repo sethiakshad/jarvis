@@ -21,6 +21,8 @@ import Agent from "./models/Agent.js";
 import authRoutes from "./routes/auth.js";
 import adminRoutes from "./routes/admin.js";
 import pipelineRoutes from "./routes/pipeline.js";
+import questionRoutes from "./routes/question.js";
+
 
 
 
@@ -35,6 +37,8 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/pipeline", pipelineRoutes);
+app.use("/api/questions", questionRoutes);
+
 
 // Serve videos statically
 app.use("/videos", express.static("temp/videos"));

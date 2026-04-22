@@ -135,7 +135,8 @@ export async function generateScenes(text) {
         const prompt = `Convert the following text to a JSON array of max 3 educational animation scenes.
 Rules:
 - scene_id must be an integer (1, 2, 3)
-- Keys: scene_id (int), title (string), concept (string), explanation (string), visual_plan (string)
+- Keys: scene_id (int), title (string), concept (string), explanation (string), visual_plan (string), narration (string)
+- narration: 1-2 clear, teacher-like sentences explaining the scene's concept.
 - Output ONLY the JSON array, no markdown.
 Text: ${text.slice(0, 6000)}`;
         const raw     = await generate(prompt);
@@ -152,10 +153,12 @@ STRICT RULES:
 - Use ONLY: Text, MathTex, Circle, Square, Arrow, Line, NumberPlane, VGroup, Rectangle, Dot
 - FORBIDDEN: SVGMobject, Grid, ImageMobject, any file loading
 - FORBIDDEN: self.mobjects or *self.mobjects in animations
+- FORBIDDEN: self.wait() calls longer than 3 seconds.
 - Use VGroup (not Group) for collections used in Create/Write
 - Positioning: use .move_to(), .next_to(), .to_edge() — never let objects overlap
 - Colors: use named Manim colors (BLUE, GREEN, TEAL, GOLD, RED, WHITE, YELLOW)
 - Use fill_opacity= instead of opacity= for shapes
+- KEEP IT CONCISE: The entire scene should be 10-25 seconds long.
 - Output ONLY Python code. NO markdown fences.
 Scene: ${JSON.stringify(scene)}`;
         const raw = await generate(prompt);

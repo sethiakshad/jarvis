@@ -1,171 +1,181 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+// ─── SDK: @google/genai (v1 endpoint — supports gemini-2.0+ models) ───────────
+import { GoogleGenAI } from '@google/genai';
 
-// Initialize the API using API key from .env (trimmed for safety)
 const apiKey = process.env.GEMINI_API_KEY_MANIM_CODE?.trim();
-const genAI = new GoogleGenerativeAI(apiKey);
+const genAI = new GoogleGenAI({ apiKey });
 
-// Model configs
-const jsonModel = genAI.getGenerativeModel({ 
-    model: 'gemini-2.5-flash',
-    generationConfig: { responseMimeType: 'application/json' }
-});
+// Model preference list — tries each in order when service is unavailable
+// All names below work on the v1 endpoint used by @google/genai
+const MODEL_FALLBACKS = [
+    process.env.GEMINI_MODEL || 'gemini-3-flash-preview',
+    'gemini-3-flash-preview',
+    'gemini-3.1-flash-lite-preview',
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash-latest',
+];
+const uniqueModels = [...new Set(MODEL_FALLBACKS)];
 
-const codeModel = genAI.getGenerativeModel({ 
-    model: 'gemini-2.5-flash' 
-});
-
-// Diagnostic check to verify key and model availability
+// Boot-time diagnostic
 (async function testConnection() {
-    console.log(`[Gemini] Initializing with key: ${apiKey?.substring(0, 7)}...`);
+    const modelName = uniqueModels[0];
+    console.log(`[Gemini] Booting with model '${modelName}'...`);
     try {
-        // Try a very simple prompt to verify model/key
-        const testModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-        const result = await testModel.generateContent("ping");
-        const response = await result.response;
-        console.log(`[Gemini] Connection successful. Model 'gemini-2.5-flash' is reachable.`);
-    } catch (error) {
-        console.error(`[Gemini] Diagnostic failed:`, error.message);
-        if (error.message?.includes('API key not valid')) {
-            console.error(`[Gemini] CRITICAL: The API key provided is rejected by Google. Please check your .env file.`);
-        } else if (error.status === 503 || error.message?.includes('503')) {
-            console.warn(`[Gemini] WARNING: Model 'gemini-2.5-flash' returned 503 Service Unavailable. This model might be overloaded or deprecated.`);
-        }
+        await withRetry(async () => {
+            const response = await genAI.models.generateContent({
+                model: modelName,
+                contents: 'ping',
+            });
+            if (!response?.text) throw new Error('Empty response');
+        }, 'Diagnostic', 3);
+        console.log(`[Gemini] Model '${modelName}' is online.`);
+    } catch (err) {
+        console.warn(`[Gemini] Diagnostic warning for '${modelName}': ${err.message?.slice(0, 100)}`);
     }
 })();
 
-/**
- * Helper to call Gemini with retry logic for 429 rate limits.
- */
-async function withRetry(fn, taskName = "Gemini Call", maxRetries = 5) {
+// ─── Retry helper ─────────────────────────────────────────────────────────────
+async function withRetry(fn, taskName = 'Gemini', maxRetries = 6) {
     let lastError;
     for (let i = 0; i < maxRetries; i++) {
         try {
-            return await fn();
-        } catch (error) {
-            lastError = error;
-            const isRateLimit = error.status === 429 || 
-                               error.message?.includes('429') || 
-                               error.message?.includes('ResourceExhausted') ||
-                               error.message?.includes('Quota');
-
-            if (isRateLimit) {
-                // Determine delay: use provided retryDelay or fallback to exponential backoff
-                let delayMs = 10000 * Math.pow(2, i); // Start with 10s, then 20s, 40s...
-                
+            const result = await fn();
+            if (i > 0) console.log(`[${taskName}] Recovered successfully after ${i} retry/ies.`);
+            return result;
+        } catch (err) {
+            lastError = err;
+            const msg = (err?.message || '').toLowerCase();
+            // Status can be in err.status or err.httpErrorCode or parsed from JSON message
+            let status = err?.status || err?.httpErrorCode || 0;
+            
+            // If message contains a JSON error with "code", try to extract it
+            if (status === 0 && msg.includes('"code":')) {
                 try {
-                    // Search for google.rpc.RetryInfo in the error details/links
-                    // The error object from @google/generative-ai can be deep
-                    const errorDetails = error.response?.error?.details || error.details || [];
-                    const retryInfo = errorDetails.find(d => d['@type']?.includes('RetryInfo') || d.description?.includes('RetryInfo'));
-                    
-                    if (retryInfo?.retryDelay) {
-                        // "48s" -> 48
-                        const seconds = parseInt(retryInfo.retryDelay);
-                        if (!isNaN(seconds)) {
-                            delayMs = (seconds * 1000) + 2000; // Add 2s safety buffer
-                        }
-                    } else if (error.links) {
-                        const linkRetry = error.links.find(l => l.description?.includes('RetryInfo'));
-                        if (linkRetry?.retryDelay) {
-                            const seconds = parseInt(linkRetry.retryDelay);
-                            if (!isNaN(seconds)) {
-                                delayMs = (seconds * 1000) + 2000;
-                            }
-                        }
-                    }
-                } catch (parseError) {
-                    console.error("[Gemini] Error parsing retry info:", parseError.message);
-                }
-
-                // Add jitter (±10%)
-                const jitter = delayMs * 0.1 * (Math.random() - 0.5);
-                const finalDelay = Math.max(1000, delayMs + jitter);
-
-                console.warn(`[${taskName}] Rate limited (429). Retrying in ${(finalDelay / 1000).toFixed(1)}s... (Attempt ${i + 1}/${maxRetries})`);
-                await new Promise(resolve => setTimeout(resolve, finalDelay));
-            } else {
-                // If not a rate limit error, throw immediately
-                throw error;
+                    const match = msg.match(/"code":\s*(\d+)/);
+                    if (match) status = parseInt(match[1]);
+                } catch (e) {}
             }
+
+            const isRateLimit   = status === 429 || msg.includes('429') || msg.includes('resourceexhausted') || msg.includes('quota');
+            const isUnavailable = status === 503 || msg.includes('503') || msg.includes('service unavailable') || msg.includes('overloaded');
+            const isRetryable   = isRateLimit || isUnavailable;
+
+            if (!isRetryable) throw err; // auth / bad-request / 404 — don't retry here
+
+            const baseDelay = Math.min(4000 * Math.pow(2, i), 60000);
+            const jitter    = baseDelay * 0.2 * (Math.random() - 0.5);
+            const delay     = Math.round(Math.max(2000, baseDelay + jitter));
+
+            console.warn(`[${taskName}] ${isRateLimit ? '429 Rate limit' : '503 Unavailable'} — retry ${i + 1}/${maxRetries} in ${(delay / 1000).toFixed(1)}s`);
+            await new Promise(r => setTimeout(r, delay));
         }
     }
     throw lastError;
 }
 
-/**
- * Checks if the content is valid educational/STEM material.
- */
+// ─── Low-level generation call ────────────────────────────────────────────────
+async function callModel(modelName, prompt, jsonMode = false) {
+    const config = jsonMode
+        ? { responseMimeType: 'application/json' }
+        : undefined;
+
+    const response = await genAI.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        ...(config ? { config } : {}),
+    });
+
+    // @google/genai returns response.text directly as a string
+    return response.text ?? '';
+}
+
+// ─── Model-fallback wrapper ───────────────────────────────────────────────────
+async function tryWithFallback(buildFn, taskName, jsonMode = false) {
+    for (const modelName of uniqueModels) {
+        try {
+            return await withRetry(
+                () => buildFn((prompt) => callModel(modelName, prompt, jsonMode)),
+                taskName
+            );
+        } catch (err) {
+            const msg    = (err?.message || '').toLowerCase();
+            let status = err?.status || err?.httpErrorCode || 0;
+            if (status === 0 && msg.includes('"code":')) {
+                try {
+                    const match = msg.match(/"code":\s*(\d+)/);
+                    if (match) status = parseInt(match[1]);
+                } catch (e) {}
+            }
+            // Fall to next model on: 503 overloaded OR 404 deprecated/not-found
+            const isCapacity = status === 503 || msg.includes('503') || msg.includes('service unavailable') || msg.includes('overloaded');
+            const isNotFound = status === 404 || msg.includes('404') || msg.includes('not found') || msg.includes('not supported for generatecontent');
+            const shouldFallback = (isCapacity || isNotFound) && modelName !== uniqueModels[uniqueModels.length - 1];
+            if (shouldFallback) {
+                console.warn(`[${taskName}] Model '${modelName}' unavailable (${isNotFound ? '404' : '503'}) — trying next fallback.`);
+                continue;
+            }
+            throw err;
+        }
+    }
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
 export async function checkRelevance(text) {
-    return await withRetry(async () => {
-        const prompt = `Task: Determine if EDUCATIONAL/STEM. Output: {"valid": true} or {"valid": false}. Content: ${text}`;
-        const result = await jsonModel.generateContent(prompt);
-        const response = await result.response;
-        const json = JSON.parse(response.text());
+    return tryWithFallback(async (generate) => {
+        const prompt = `Task: Is the following content educational/STEM? Output ONLY valid JSON: {"valid": true} or {"valid": false}.\nContent: ${text.slice(0, 4000)}`;
+        const raw  = await generate(prompt);
+        const json = JSON.parse(raw.replace(/```json|```/g, '').trim());
         return json.valid === true;
-    }, "Relevance Check");
+    }, 'Relevance Check', true);
 }
 
-/**
- * Generates max 4 scenes for Manim animation.
- */
 export async function generateScenes(text) {
-    return await withRetry(async () => {
-        const prompt = `Task: Convert to JSON array of max 4 scenes. 
-        Rules: 
-        - scene_id MUST be an integer (1, 2, 3, 4).
-        - Keys: scene_id, title, concept, explanation, visual_plan. 
-        Text: ${text}`;
-        const result = await jsonModel.generateContent(prompt);
-        const response = await result.response;
-        return JSON.parse(response.text());
-    }, "Scene Generation");
+    return tryWithFallback(async (generate) => {
+        const prompt = `Convert the following text to a JSON array of max 3 educational animation scenes.
+Rules:
+- scene_id must be an integer (1, 2, 3)
+- Keys: scene_id (int), title (string), concept (string), explanation (string), visual_plan (string)
+- Output ONLY the JSON array, no markdown.
+Text: ${text.slice(0, 6000)}`;
+        const raw     = await generate(prompt);
+        const cleaned = raw.replace(/```json|```/g, '').trim();
+        return JSON.parse(cleaned);
+    }, 'Scene Generation', true);
 }
 
-/**
- * Generates Manim executable code for one scene.
- */
 export async function generateManimCode(scene) {
-    return await withRetry(async () => {
-        const prompt = `Task: Generate ManimCE codebase for Scene${scene.scene_id}. 
-        STRICT RULES:
-        - Use ONLY standard Manim Community Edition library.
-        - FORBIDDEN: Do not use 'Grid', 'SVGMobject', or any external assets/files.
-        - FORBIDDEN: Do not use 'self.mobjects' or '*self.mobjects' in animations.
-        - Use basic mobjects: Text, MathTex, Circle, Square, Arrow, Line, NumberPlane.
-        - Use 'VGroup()' for standard collections of mobjects (Text, MathTex, Circle, Square, Arrow, Line, NumberPlane) as they are VMobjects and required for animations like 'Create' and 'Write'.
-        - LAYOUT: Never overlap text. If placing items inside a box, ensure the box label (e.g., 'AGENT') is placed ABOVE or BELOW the internal components, or fades out before they appear.
-        - SPACING: Use 'arrange(DOWN, buff=0.4)' or similar to provide breathable spacing.
-        - AESTHETICS: Use a distinct, vibrant color palette (e.g., BLUE, GREEN, TEAL, GOLD). Ensure font sizes are readable (default 36-48 for titles, 24-30 for labels).
-        - COMPATIBILITY: Use 'fill_opacity=' instead of 'opacity=' for mobjects like Dot, Circle, and Square.
-        - class Scene${scene.scene_id}(Scene): ...
-        - Output ONLY Python code. No markdown.
-        Scene Info: ${JSON.stringify(scene)}`;
-        const result = await codeModel.generateContent(prompt);
-        const response = await result.response;
-        let code = response.text().trim();
-        return code.replace(/```python|```/g, "").trim();
-    }, `Code Gen Scene ${scene.scene_id}`);
+    return tryWithFallback(async (generate) => {
+        const prompt = `Generate ManimCE Python code for this educational scene.
+STRICT RULES:
+- Class name MUST be exactly: Scene${scene.scene_id}
+- Use ONLY: Text, MathTex, Circle, Square, Arrow, Line, NumberPlane, VGroup, Rectangle, Dot
+- FORBIDDEN: SVGMobject, Grid, ImageMobject, any file loading
+- FORBIDDEN: self.mobjects or *self.mobjects in animations
+- Use VGroup (not Group) for collections used in Create/Write
+- Positioning: use .move_to(), .next_to(), .to_edge() — never let objects overlap
+- Colors: use named Manim colors (BLUE, GREEN, TEAL, GOLD, RED, WHITE, YELLOW)
+- Use fill_opacity= instead of opacity= for shapes
+- Output ONLY Python code. NO markdown fences.
+Scene: ${JSON.stringify(scene)}`;
+        const raw = await generate(prompt);
+        return raw.replace(/```python|```/g, '').trim();
+    }, `Code Gen Scene${scene.scene_id}`);
 }
 
-/**
- * Fixes broken Manim code iteratively.
- */
 export async function fixManimCode(error, code) {
-    return await withRetry(async () => {
-        const prompt = `Task: Fix this ManimCE error. 
-        Current Error: ${error}
-        STRICT RULES:
-        - If 'TypeError: Create only works for VMobjects', replace 'Group' with 'VGroup' and ensure all members are standard vector shapes/text.
-        - If 'TypeError: ... got an unexpected keyword argument \'opacity\'', replace 'opacity=' with 'fill_opacity=' or 'stroke_opacity=' (use fill_opacity for Dot, Circle, Square).
-        - If 'TypeError: ... got an unexpected keyword argument \'font_size\'', ensure it is only used with Text/MathTex.
-        - If NameError for 'Grid', use 'NumberPlane' instead.
-        - If FileNotFoundError, remove the asset-loading line entirely.
-        - Output ONLY corrected code. No explanations.
-        Broken Code:
-        ${code}`;
-        const result = await codeModel.generateContent(prompt);
-        const response = await result.response;
-        let fixedCode = response.text().trim();
-        return fixedCode.replace(/```python|```/g, "").trim();
-    }, "Code Fix");
+    return tryWithFallback(async (generate) => {
+        const prompt = `Fix this ManimCE Python error. Output ONLY corrected Python code, no markdown.
+RULES:
+- If "Create only works for VMobjects": replace Group with VGroup
+- If "unexpected keyword argument 'opacity'": replace opacity= with fill_opacity=
+- If NameError for Grid: use NumberPlane instead
+- If FileNotFoundError: remove asset-loading lines
+- If AttributeError on self.mobjects: remove that usage entirely
+Error: ${String(error).slice(0, 800)}
+Code:
+${code}`;
+        const raw = await generate(prompt);
+        return raw.replace(/```python|```/g, '').trim();
+    }, 'Code Fix');
 }

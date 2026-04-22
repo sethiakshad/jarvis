@@ -4,37 +4,39 @@ import { extractText } from '../utils/pdfExtractor.js';
 import { checkRelevance, generateScenes, generateManimCode } from './gemini.js';
 import { runManimCodeWithRetry } from './manimRunner.js';
 import { mergeVideos } from '../utils/videoMerger.js';
+import { generateFallbackVideo } from '../utils/fallbackVideoGenerator.js';
 
 // Global Job Store
 export const jobsStore = {};
 
-// Concurrency limit variables
+// Concurrency limit
 const MAX_CONCURRENT_JOBS = 2;
 let activeJobs = 0;
 const jobQueue = [];
 
-/**
- * Initiates the background pipeline for a given job.
- * Enforces concurrency limits.
- */
+function updateJob(jobId, patch) {
+    jobsStore[jobId] = { ...jobsStore[jobId], ...patch };
+}
+
 export async function startPipelineJob(jobId, buffer) {
     if (activeJobs >= MAX_CONCURRENT_JOBS) {
-        jobsStore[jobId].status = "queued";
+        updateJob(jobId, { status: 'queued', statusMessage: 'Waiting in queue...' });
         jobQueue.push({ jobId, buffer });
         return;
     }
 
     try {
         activeJobs++;
-        jobsStore[jobId].status = "processing";
+        updateJob(jobId, { status: 'processing', statusMessage: 'Starting pipeline...' });
         await runPipeline(jobId, buffer);
     } catch (error) {
         console.error(`[Job ${jobId}] Pipeline failed:`, error);
-        jobsStore[jobId] = {
-            status: "error",
+        updateJob(jobId, {
+            status: 'error',
             error: error.message,
+            statusMessage: 'Pipeline failed.',
             timestamp: new Date().toISOString()
-        };
+        });
     } finally {
         activeJobs--;
         processNextInQueue();
@@ -48,77 +50,118 @@ function processNextInQueue() {
     }
 }
 
-/**
- * The core orchestration logic
- */
 async function runPipeline(jobId, buffer) {
     const jobDir = path.resolve(`./temp/videos/${jobId}`);
     if (!fs.existsSync(jobDir)) {
         fs.mkdirSync(jobDir, { recursive: true });
     }
 
-    // 1. Extraction (limit strictly ~8000)
+    // ── Step 1: Extract text ──────────────────────────────────────────────────
+    updateJob(jobId, { statusMessage: 'Extracting document text...' });
     console.log(`[Job ${jobId}] Extracting text...`);
     const text = await extractText(buffer, 8000);
 
-    // 2. Relevance Check
+    // ── Step 2: Relevance check ───────────────────────────────────────────────
+    updateJob(jobId, { statusMessage: 'Checking content relevance...' });
     console.log(`[Job ${jobId}] Checking relevance...`);
     const isValid = await checkRelevance(text);
     if (!isValid) {
-        throw new Error('INVALID: Uploaded file does not contain educational content. Please upload a valid academic PDF/PPT.');
+        throw new Error('INVALID: Uploaded file does not appear to contain educational content.');
     }
 
-    // 3. Scene Generation (Max 4 scenes handled by Gemini strict constraint)
+    // ── Step 3: Generate scene plan ───────────────────────────────────────────
+    updateJob(jobId, { statusMessage: 'Generating scene plan with AI...' });
     console.log(`[Job ${jobId}] Generating scenes JSON...`);
     let scenes = [];
     try {
         scenes = await generateScenes(text);
     } catch (e) {
-        console.error(`[Job ${jobId}] Scene generation error:`, e);
-        throw new Error(`Gemini Pipeline Error: ${e.message}`);
+        throw new Error(`Scene generation failed: ${e.message}`);
     }
 
     if (!Array.isArray(scenes) || scenes.length === 0) {
-        throw new Error('Scene logic generation produced empty or invalid array format.');
+        throw new Error('AI returned empty or invalid scene list.');
     }
-    
-    // Safety crop in case Gemini outputs 5+
     scenes = scenes.slice(0, 4);
 
-    // 4. Manim Generation per Scene
-    let generatedVideoPaths = [];
-    
-    for (const scene of scenes) {
-        console.log(`[Job ${jobId}] Processing Scene ${scene.scene_id}: ${scene.title}`);
-        
-        // Generate Manim code
-        const code = await generateManimCode(scene);
-        
-        // Run and potentially auto-fix
-        await runManimCodeWithRetry(code, scene, jobId);
-        
-        // Small delay to allow OS to release file handles before next scene or merging
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // The runner logic enforces that output goes to `temp/videos/{jobId}/scene{scene_id}.mp4`
-        const expectedVideoOutput = path.join(jobDir, `scene${scene.scene_id}.mp4`);
-        if (fs.existsSync(expectedVideoOutput)) {
-            generatedVideoPaths.push(expectedVideoOutput);
-        } else {
-            throw new Error(`Video file scene${scene.scene_id}.mp4 inexplicably missing after supposed success.`);
+    // ── Step 4: Render each scene (skip failures — don't abort) ──────────────
+    const generatedVideoPaths = [];
+    const failedScenes = [];
+
+    for (let idx = 0; idx < scenes.length; idx++) {
+        const scene = scenes[idx];
+        updateJob(jobId, {
+            statusMessage: `Rendering scene ${idx + 1}/${scenes.length}: "${scene.title}"...`
+        });
+        console.log(`[Job ${jobId}] Generating Manim code for Scene${scene.scene_id}...`);
+
+        let code;
+        try {
+            code = await generateManimCode(scene);
+        } catch (e) {
+            console.error(`[Job ${jobId}] Code generation failed for scene ${scene.scene_id}:`, e.message);
+            failedScenes.push(scene.scene_id);
+            continue;
         }
+
+        const result = await runManimCodeWithRetry(code, scene, jobId);
+
+        if (result.success) {
+            const videoFile = path.join(jobDir, `scene${scene.scene_id}.mp4`);
+            if (fs.existsSync(videoFile)) {
+                generatedVideoPaths.push(videoFile);
+            } else {
+                console.warn(`[Job ${jobId}] Scene${scene.scene_id} reported success but no mp4 found.`);
+                failedScenes.push(scene.scene_id);
+            }
+        } else {
+            failedScenes.push(scene.scene_id);
+        }
+
+        // Brief pause between scenes to release OS file handles
+        await new Promise(resolve => setTimeout(resolve, 800));
     }
 
-    // 5. Build final output 
-    console.log(`[Job ${jobId}] Merging ${generatedVideoPaths.length} videos...`);
-    const finalOutputPath = path.join(jobDir, `final.mp4`);
-    await mergeVideos(generatedVideoPaths, finalOutputPath);
+    const finalOutputPath = path.join(jobDir, 'final.mp4');
 
-    // 6. Complete
-    jobsStore[jobId] = {
-        status: "done",
+    // ── Step 5: Merge or fallback ─────────────────────────────────────────────
+    if (generatedVideoPaths.length > 0) {
+        updateJob(jobId, {
+            statusMessage: `Merging ${generatedVideoPaths.length} scene(s)...`
+        });
+        console.log(`[Job ${jobId}] Merging ${generatedVideoPaths.length} video(s)...`);
+
+        if (generatedVideoPaths.length === 1) {
+            // Only 1 scene — just copy, no need to concat
+            fs.copyFileSync(generatedVideoPaths[0], finalOutputPath);
+        } else {
+            await mergeVideos(generatedVideoPaths, finalOutputPath);
+        }
+    } else {
+        // Zero scenes rendered — use fallback generator
+        console.warn(`[Job ${jobId}] All Manim scenes failed. Generating fallback video...`);
+        updateJob(jobId, { statusMessage: 'All scenes failed — generating fallback video...' });
+        await generateFallbackVideo(scenes, finalOutputPath);
+    }
+
+    if (!fs.existsSync(finalOutputPath)) {
+        throw new Error('Final video was not created. Pipeline failed completely.');
+    }
+
+    // ── Step 6: Done ──────────────────────────────────────────────────────────
+    const partial = failedScenes.length > 0 && generatedVideoPaths.length > 0;
+    updateJob(jobId, {
+        status: 'done',
         videoUrl: `/videos/${jobId}/final.mp4`,
-        completedAt: new Date().toISOString()
-    };
-    console.log(`[Job ${jobId}] Pipeline complete. Accessible at /videos/${jobId}/final.mp4`);
+        completedAt: new Date().toISOString(),
+        statusMessage: partial
+            ? `Done (${generatedVideoPaths.length}/${scenes.length} scenes rendered)`
+            : generatedVideoPaths.length === 0
+                ? 'Done (fallback video generated)'
+                : 'Done — all scenes rendered!',
+        scenesRendered: generatedVideoPaths.length,
+        scenesTotal: scenes.length
+    });
+
+    console.log(`[Job ${jobId}] Complete → /videos/${jobId}/final.mp4`);
 }

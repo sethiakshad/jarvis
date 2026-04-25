@@ -4,10 +4,10 @@ import path from 'path';
 /**
  * Syncs audio (generated from narration) with a video file.
  */
-export async function syncAudioWithVideo(videoPath, narration, outputPath) {
+export async function syncAudioWithVideo(videoPath, narration, outputPath, audioLanguage = 'english') {
     return new Promise((resolve) => {
         const handlerPath = path.resolve('../python-service/audio_handler.py');
-        const processArgs = [handlerPath, videoPath, narration, outputPath];
+        const processArgs = [handlerPath, videoPath, narration, outputPath, audioLanguage];
 
         const child = spawn('python', processArgs, {
             cwd: path.resolve('../python-service')

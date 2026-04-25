@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Pause, Maximize, Download, Film, Layers, CheckCircle, AlertCircle, HelpCircle, ChevronDown, ChevronUp, Activity } from 'lucide-react';
+import { Play, Pause, Maximize, Download, Film, Layers, CheckCircle, AlertCircle, HelpCircle, ChevronDown, ChevronUp, Activity, Lightbulb } from 'lucide-react';
 import { useVideo } from '../App';
 
 const BACKEND = () => {
@@ -128,7 +128,15 @@ const VideoPreview = () => {
   };
 
 
+  const toggleShowHint = (qId) => {
+    setUserAnswers(prev => ({
+      ...prev,
+      [qId]: { ...prev[qId], showHint: !prev[qId]?.showHint }
+    }));
+  };
+
   const toggleShowAnswer = (qId) => {
+
     setUserAnswers(prev => ({
       ...prev,
       [qId]: { 
@@ -564,7 +572,21 @@ const VideoPreview = () => {
                     )}
 
 
-                    <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
+                    <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '20px' }}>
+                      {q.hint && (
+                        <button 
+                          onClick={() => toggleShowHint(q.id)}
+                          style={{ 
+                            display: 'flex', alignItems: 'center', gap: '6px',
+                            fontSize: '0.8rem', color: userAnswers[q.id]?.showHint ? 'var(--neon-yellow)' : 'var(--text-muted)', 
+                            background: 'none', border: 'none', cursor: 'pointer', transition: 'color 0.3s'
+                          }}
+                        >
+                          <Lightbulb size={14} />
+                          {userAnswers[q.id]?.showHint ? 'Hide Hint' : 'Show Hint'}
+                        </button>
+                      )}
+                      
                       <button 
                         onClick={() => toggleShowAnswer(q.id)}
                         style={{ 
@@ -581,7 +603,27 @@ const VideoPreview = () => {
                     </div>
 
                     <AnimatePresence>
+                      {userAnswers[q.id]?.showHint && q.hint && (
+                        <motion.div 
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          style={{ overflow: 'hidden' }}
+                        >
+                          <div style={{ 
+                            marginTop: '1rem', padding: '1rem', 
+                            background: 'rgba(255,255,0,0.05)', borderRadius: '8px',
+                            border: '1px dashed rgba(255,255,0,0.3)', color: '#ffee00', fontSize: '0.9rem',
+                            display: 'flex', alignItems: 'flex-start', gap: '10px'
+                          }}>
+                            <Lightbulb size={16} style={{ marginTop: '2px' }} />
+                            <span><strong>Hint:</strong> {q.hint}</span>
+                          </div>
+                        </motion.div>
+                      )}
+
                       {userAnswers[q.id]?.showAnswer && (
+
                         <motion.div 
                           initial={{ height: 0, opacity: 0 }}
                           animate={{ height: 'auto', opacity: 1 }}

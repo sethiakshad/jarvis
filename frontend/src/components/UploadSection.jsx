@@ -20,6 +20,7 @@ const UploadSection = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [numMcqs, setNumMcqs] = useState(3);
   const [numShorts, setNumShorts] = useState(2);
+  const [audioLanguage, setAudioLanguage] = useState('english');
   const [showModal, setShowModal] = useState(false);
   const [pendingFile, setPendingFile] = useState(null);
 
@@ -47,6 +48,7 @@ const UploadSection = () => {
     formData.append('document', pendingFile);
     formData.append('num_mcqs', numMcqs);
     formData.append('num_shorts', numShorts);
+    formData.append('audio_language', audioLanguage);
 
     try {
       const res = await fetch(`${BACKEND()}/api/pipeline/generate`, {
@@ -347,6 +349,21 @@ const UploadSection = () => {
                         border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#fff', textAlign: 'center'
                       }}
                     />
+                  </div>
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '0.5rem' }}>Audio Language</label>
+                    <select 
+                      value={audioLanguage}
+                      onChange={e => setAudioLanguage(e.target.value)}
+                      style={{
+                        width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#fff'
+                      }}
+                    >
+                      <option value="english" style={{ color: '#000' }}>English</option>
+                      <option value="hinglish" style={{ color: '#000' }}>Hinglish (Roman Script)</option>
+                      <option value="hindi" style={{ color: '#000' }}>Hindi (Devanagari)</option>
+                    </select>
                   </div>
                 </div>
 

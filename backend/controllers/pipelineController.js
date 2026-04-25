@@ -13,16 +13,18 @@ export async function generatePipeline(req, res) {
     const jobId = uuidv4();
     const numMcqs = parseInt(req.body.num_mcqs) || 0;
     const numShorts = parseInt(req.body.num_shorts) || 0;
+    const audioLanguage = req.body.audio_language || "english";
 
     // Initialize job in the store
     jobsStore[jobId] = {
         status: "processing",
         numMcqs,
-        numShorts
+        numShorts,
+        audioLanguage
     };
 
     // Kick off pipeline asynchronously (do NOT await)
-    startPipelineJob(jobId, buffer, numMcqs, numShorts).catch((err) => {
+    startPipelineJob(jobId, buffer, numMcqs, numShorts, audioLanguage).catch((err) => {
         console.error(`Unhandled error inside pipeline for ${jobId}: `, err);
     });
 

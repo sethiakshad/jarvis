@@ -12,11 +12,12 @@ export async function generateQuestionsFromText(text, numMcqs, numShorts) {
 Task: Generate ${numMcqs} Multiple Choice Questions (mcq) and ${numShorts} Short Answer Questions (short) based on the text below.
 Rules:
 1. Total questions must be exactly ${numMcqs + numShorts}.
-2. For MCQ: Provide 4 options and the correct_answer (the text of the correct option).
-3. For Short: Provide the question and a clear, concise "answer" for reference.
-4. Output MUST be a strictly valid JSON object with the key "questions".
+2. For MCQ: Provide 4 options and the correct_answer.
+3. For Short: Provide the question and a clear, concise reference answer.
+4. HINT: Every question must include a "hint" field (1-2 lines) that guides the user without revealing the answer.
+5. Output MUST be a strictly valid JSON object with the key "questions".
 
-5. Use this exact JSON structure:
+Use this exact JSON structure:
 {
   "questions": [
     {
@@ -24,30 +25,57 @@ Rules:
       "type": "mcq",
       "question": "What is ...?",
       "options": ["A", "B", "C", "D"],
-      "correct_answer": "B"
+      "correct_answer": "B",
+      "hint": "Clue that helps guide thinking..."
     },
     {
       "id": 2,
       "type": "short",
       "question": "Explain ...",
-      "answer": "Correct explanation here"
+      "answer": "Correct explanation here",
+      "hint": "Focus on the definition..."
     }
   ]
 }
+
 
 Text: ${text.slice(0, 10000)}
 `;
 
     console.log(`[questionService] Calling Gemini with ${numMcqs} MCQs and ${numShorts} Short Ans...`);
-    const response = await genAI.models.generateContent({
-        model: modelName,
-        contents: prompt,
-    });
+    
+    let response;
+    let attempts = 0;
+    const maxAttempts = 3;
+    let delay = 2000;
+
+    while (attempts < maxAttempts) {
+        try {
+            response = await genAI.models.generateContent({
+                model: modelName,
+                contents: prompt,
+            });
+            if (response && response.text) break;
+            throw new Error("Empty response from Gemini");
+        } catch (err) {
+            attempts++;
+            const is503 = err.message?.includes('503') || err.status === 503 || err.message?.includes('UNAVAILABLE');
+            
+            if (is503 && attempts < maxAttempts) {
+                console.warn(`[questionService] Gemini 503 (Attempt ${attempts}/${maxAttempts}). Retrying in ${delay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                delay *= 2;
+                continue;
+            }
+            throw err;
+        }
+    }
 
     if (!response || !response.text) {
         console.error(`[questionService] Gemini returned empty response!`, response);
         throw new Error("Gemini returned an empty response for questions.");
     }
+
 
     console.log(`[questionService] Gemini responded. Raw text length: ${response.text.length}`);
     const raw = response.text;

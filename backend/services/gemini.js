@@ -130,13 +130,20 @@ export async function checkRelevance(text) {
     }, 'Relevance Check', true);
 }
 
-export async function generateScenes(text) {
+export async function generateScenes(text, audioLanguage = 'english') {
     return tryWithFallback(async (generate) => {
+        let narrationRule = "narration: 1-2 clear, teacher-like sentences explaining the scene's concept.";
+        if (audioLanguage === 'hinglish') {
+            narrationRule = "narration: 1-2 clear, teacher-like sentences explaining the scene's concept in Hinglish (Mix of Hindi + English using Roman script ONLY. Example: 'Ab hum dekhte hain ki graph kaise increase ho raha hai').";
+        } else if (audioLanguage === 'hindi') {
+            narrationRule = "narration: 1-2 clear, teacher-like sentences explaining the scene's concept in pure Hindi (written in Devanagari script).";
+        }
+
         const prompt = `Convert the following text to a JSON array of max 3 educational animation scenes.
 Rules:
 - scene_id must be an integer (1, 2, 3)
 - Keys: scene_id (int), title (string), concept (string), explanation (string), visual_plan (string), narration (string)
-- narration: 1-2 clear, teacher-like sentences explaining the scene's concept.
+- ${narrationRule}
 - Output ONLY the JSON array, no markdown.
 Text: ${text.slice(0, 6000)}`;
         const raw     = await generate(prompt);

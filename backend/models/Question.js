@@ -14,6 +14,7 @@ const questionSchema = new mongoose.Schema({
       options: [String], // Only for MCQ
       correct_answer: String, // For MCQ correct option (e.g., "A" or the text)
       answer: String, // For short answer explanation
+      hint: String, // Clue that helps guide thinking
     },
   ],
   created_at: {

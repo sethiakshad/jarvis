@@ -12,7 +12,7 @@ def get_ffmpeg_path():
         return os.path.join(ffmpeg_dir, "ffmpeg.exe")
     return "ffmpeg"
 
-def process_audio_video(video_path, narration_text, output_path):
+def process_audio_video(video_path, narration_text, output_path, language='english'):
     # Use a unique temp audio file based on output path to avoid collisions
     temp_audio = output_path.replace(".mp4", f"_temp_{os.getpid()}.mp3")
     
@@ -26,7 +26,18 @@ def process_audio_video(video_path, narration_text, output_path):
             audio = AudioArrayClip(silence_arr, fps=44100)
             audio.write_audiofile(temp_audio, logger=None)
         else:
-            tts = gTTS(text=narration_text, lang='en')
+            tld = 'com'
+            if language == 'hinglish':
+                # For Hinglish, we use 'en' with Indian accent for Roman script.
+                lang_code = 'en'
+                tld = 'co.in'
+            elif language == 'hindi':
+                lang_code = 'hi'
+                tld = 'co.in'
+            else:
+                lang_code = 'en'
+            
+            tts = gTTS(text=narration_text, lang=lang_code, tld=tld)
             tts.save(temp_audio)
         
         # 2. Load video and audio
@@ -103,10 +114,11 @@ if __name__ == "__main__":
     v_path = sys.argv[1]
     text = sys.argv[2]
     out_path = sys.argv[3]
+    lang = sys.argv[4] if len(sys.argv) > 4 else 'english'
     
     # Configure moviepy to use the local ffmpeg if found
     ffmpeg_exe = get_ffmpeg_path()
     os.environ["IMAGEIO_FFMPEG_EXE"] = ffmpeg_exe
 
-    result = process_audio_video(v_path, text, out_path)
+    result = process_audio_video(v_path, text, out_path, lang)
     print(json.dumps(result))

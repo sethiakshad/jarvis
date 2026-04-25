@@ -22,19 +22,19 @@ function updateJob(jobId, patch) {
     jobsStore[jobId] = { ...jobsStore[jobId], ...patch };
 }
 
-export async function startPipelineJob(jobId, buffer, numMcqs = 0, numShorts = 0) {
+export async function startPipelineJob(jobId, buffer, numMcqs = 0, numShorts = 0, audioLanguage = 'english') {
 
 
     if (activeJobs >= MAX_CONCURRENT_JOBS) {
         updateJob(jobId, { status: 'queued', statusMessage: 'Waiting in queue...' });
-        jobQueue.push({ jobId, buffer });
+        jobQueue.push({ jobId, buffer, numMcqs, numShorts, audioLanguage });
         return;
     }
 
     try {
         activeJobs++;
         updateJob(jobId, { status: 'processing', statusMessage: 'Starting pipeline...' });
-        await runPipeline(jobId, buffer, numMcqs, numShorts);
+        await runPipeline(jobId, buffer, numMcqs, numShorts, audioLanguage);
 
 
     } catch (error) {
@@ -54,11 +54,11 @@ export async function startPipelineJob(jobId, buffer, numMcqs = 0, numShorts = 0
 function processNextInQueue() {
     if (jobQueue.length > 0 && activeJobs < MAX_CONCURRENT_JOBS) {
         const nextJob = jobQueue.shift();
-        startPipelineJob(nextJob.jobId, nextJob.buffer);
+        startPipelineJob(nextJob.jobId, nextJob.buffer, nextJob.numMcqs, nextJob.numShorts, nextJob.audioLanguage);
     }
 }
 
-async function runPipeline(jobId, buffer, numMcqs = 0, numShorts = 0) {
+async function runPipeline(jobId, buffer, numMcqs = 0, numShorts = 0, audioLanguage = 'english') {
 
 
     const jobDir = path.resolve(`./temp/videos/${jobId}`);
@@ -84,7 +84,7 @@ async function runPipeline(jobId, buffer, numMcqs = 0, numShorts = 0) {
     console.log(`[Job ${jobId}] Generating scenes JSON...`);
     let scenes = [];
     try {
-        scenes = await generateScenes(text);
+        scenes = await generateScenes(text, audioLanguage);
     } catch (e) {
         throw new Error(`Scene generation failed: ${e.message}`);
     }
@@ -124,13 +124,13 @@ async function runPipeline(jobId, buffer, numMcqs = 0, numShorts = 0) {
                 console.log(`[Job ${jobId}] Syncing audio for Scene${scene.scene_id}...`);
                 
                 try {
-                    const audioResult = await syncAudioWithVideo(rawVideoFile, scene.narration || "", syncedVideoFile);
+                    const audioResult = await syncAudioWithVideo(rawVideoFile, scene.narration || "", syncedVideoFile, audioLanguage);
                     if (audioResult.success && fs.existsSync(syncedVideoFile)) {
                         generatedVideoPaths.push(syncedVideoFile);
                     } else {
                         console.warn(`[Job ${jobId}] Audio sync failed for Scene${scene.scene_id}, trying to generate silent video with audio stream.`);
                         // Try syncing with empty string to at least get an audio stream (fixed audio_handler handles this)
-                        const silentResult = await syncAudioWithVideo(rawVideoFile, "", syncedVideoFile);
+                        const silentResult = await syncAudioWithVideo(rawVideoFile, "", syncedVideoFile, audioLanguage);
                         if (silentResult.success && fs.existsSync(syncedVideoFile)) {
                             generatedVideoPaths.push(syncedVideoFile);
                         } else {

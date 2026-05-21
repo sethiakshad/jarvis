@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { extractText } from '../utils/pdfExtractor.js';
-import { checkRelevance, generateScenes, generateManimCode } from './gemini.js';
+import { checkRelevance, generateScenes, generateManimCode, isNarrationGeneric, regenerateNarration } from './gemini.js';
 import { runManimCodeWithRetry } from './manimRunner.js';
 import { mergeVideos } from '../utils/videoMerger.js';
 import { generateFallbackVideo } from '../utils/fallbackVideoGenerator.js';
@@ -22,19 +22,19 @@ function updateJob(jobId, patch) {
     jobsStore[jobId] = { ...jobsStore[jobId], ...patch };
 }
 
-export async function startPipelineJob(jobId, buffer, numMcqs = 0, numShorts = 0, audioLanguage = 'english') {
+export async function startPipelineJob(jobId, buffer, numMcqs = 0, numShorts = 0, audioLanguage = 'english', focusTopic = "") {
 
 
     if (activeJobs >= MAX_CONCURRENT_JOBS) {
         updateJob(jobId, { status: 'queued', statusMessage: 'Waiting in queue...' });
-        jobQueue.push({ jobId, buffer, numMcqs, numShorts, audioLanguage });
+        jobQueue.push({ jobId, buffer, numMcqs, numShorts, audioLanguage, focusTopic });
         return;
     }
 
     try {
         activeJobs++;
         updateJob(jobId, { status: 'processing', statusMessage: 'Starting pipeline...' });
-        await runPipeline(jobId, buffer, numMcqs, numShorts, audioLanguage);
+        await runPipeline(jobId, buffer, numMcqs, numShorts, audioLanguage, focusTopic);
 
 
     } catch (error) {
@@ -54,11 +54,11 @@ export async function startPipelineJob(jobId, buffer, numMcqs = 0, numShorts = 0
 function processNextInQueue() {
     if (jobQueue.length > 0 && activeJobs < MAX_CONCURRENT_JOBS) {
         const nextJob = jobQueue.shift();
-        startPipelineJob(nextJob.jobId, nextJob.buffer, nextJob.numMcqs, nextJob.numShorts, nextJob.audioLanguage);
+        startPipelineJob(nextJob.jobId, nextJob.buffer, nextJob.numMcqs, nextJob.numShorts, nextJob.audioLanguage, nextJob.focusTopic);
     }
 }
 
-async function runPipeline(jobId, buffer, numMcqs = 0, numShorts = 0, audioLanguage = 'english') {
+async function runPipeline(jobId, buffer, numMcqs = 0, numShorts = 0, audioLanguage = 'english', focusTopic = "") {
 
 
     const jobDir = path.resolve(`./temp/videos/${jobId}`);
@@ -84,7 +84,7 @@ async function runPipeline(jobId, buffer, numMcqs = 0, numShorts = 0, audioLangu
     console.log(`[Job ${jobId}] Generating scenes JSON...`);
     let scenes = [];
     try {
-        scenes = await generateScenes(text, audioLanguage);
+        scenes = await generateScenes(text, audioLanguage, focusTopic);
     } catch (e) {
         throw new Error(`Scene generation failed: ${e.message}`);
     }
@@ -92,67 +92,100 @@ async function runPipeline(jobId, buffer, numMcqs = 0, numShorts = 0, audioLangu
     if (!Array.isArray(scenes) || scenes.length === 0) {
         throw new Error('AI returned empty or invalid scene list.');
     }
-    scenes = scenes.slice(0, 4);
+    scenes = scenes.slice(0, 3);
 
-    // ── Step 4: Render each scene (skip failures — don't abort) ──────────────
-    const generatedVideoPaths = [];
-    const failedScenes = [];
+    // ── Validation: Fix generic narration (Requirement 7) ─────────────────────
+    updateJob(jobId, { statusMessage: 'Validating narration quality...' });
+    for (let i = 0; i < scenes.length; i++) {
+        if (isNarrationGeneric(scenes[i])) {
+            console.log(`[Job ${jobId}] Scene${scenes[i].scene_id} narration is generic. Regenerating...`);
+            try {
+                const fixed = await regenerateNarration(scenes[i], audioLanguage);
+                if (fixed && fixed.length > 5) {
+                    scenes[i].narration = fixed;
+                    console.log(`[Job ${jobId}] Scene${scenes[i].scene_id} narration improved: "${fixed}"`);
+                }
+            } catch (err) {
+                console.warn(`[Job ${jobId}] Failed to regenerate narration for Scene${scenes[i].scene_id}:`, err.message);
+            }
+        }
+    }
 
-    for (let idx = 0; idx < scenes.length; idx++) {
-        const scene = scenes[idx];
-        updateJob(jobId, {
-            statusMessage: `Rendering scene ${idx + 1}/${scenes.length}: "${scene.title}"...`
-        });
+    // Initialize progress tracking
+    const sceneStatuses = scenes.map(s => ({ scene_id: s.scene_id, status: 'pending' }));
+    updateJob(jobId, { sceneStatuses });
+
+    const updateSceneStatus = (sceneId, status) => {
+        const scene = sceneStatuses.find(s => s.scene_id === sceneId);
+        if (scene) {
+            scene.status = status;
+            updateJob(jobId, { sceneStatuses });
+        }
+    };
+
+    // ── Step 4: Render each scene in parallel (skip failures — don't abort) ──────────────
+    updateJob(jobId, { statusMessage: 'Processing scenes in parallel...' });
+
+    const sceneResults = await Promise.all(scenes.map(async (scene, idx) => {
         console.log(`[Job ${jobId}] Generating Manim code for Scene${scene.scene_id}...`);
 
         let code;
         try {
             code = await generateManimCode(scene);
+            updateSceneStatus(scene.scene_id, 'code_generated');
         } catch (e) {
             console.error(`[Job ${jobId}] Code generation failed for scene ${scene.scene_id}:`, e.message);
-            failedScenes.push(scene.scene_id);
-            continue;
+            updateSceneStatus(scene.scene_id, 'failed');
+            return { failed: true, scene_id: scene.scene_id };
         }
 
+        updateSceneStatus(scene.scene_id, 'rendering');
         const result = await runManimCodeWithRetry(code, scene, jobId);
 
         if (result.success) {
             const rawVideoFile = path.join(jobDir, `scene${scene.scene_id}.mp4`);
             if (fs.existsSync(rawVideoFile)) {
                 // ── Sync Audio (Narration) ──
+                updateSceneStatus(scene.scene_id, 'audio_generating');
                 const syncedVideoFile = path.join(jobDir, `scene${scene.scene_id}_synced.mp4`);
                 console.log(`[Job ${jobId}] Syncing audio for Scene${scene.scene_id}...`);
-                
+
                 try {
                     const audioResult = await syncAudioWithVideo(rawVideoFile, scene.narration || "", syncedVideoFile, audioLanguage);
                     if (audioResult.success && fs.existsSync(syncedVideoFile)) {
-                        generatedVideoPaths.push(syncedVideoFile);
+                        updateSceneStatus(scene.scene_id, 'completed');
+                        return { success: true, path: syncedVideoFile, scene_id: scene.scene_id };
                     } else {
                         console.warn(`[Job ${jobId}] Audio sync failed for Scene${scene.scene_id}, trying to generate silent video with audio stream.`);
-                        // Try syncing with empty string to at least get an audio stream (fixed audio_handler handles this)
                         const silentResult = await syncAudioWithVideo(rawVideoFile, "", syncedVideoFile, audioLanguage);
                         if (silentResult.success && fs.existsSync(syncedVideoFile)) {
-                            generatedVideoPaths.push(syncedVideoFile);
+                            updateSceneStatus(scene.scene_id, 'completed');
+                            return { success: true, path: syncedVideoFile, scene_id: scene.scene_id };
                         } else {
                             console.error(`[Job ${jobId}] Failed to generate even a silent synced video. Merge may fail.`);
-                            generatedVideoPaths.push(rawVideoFile);
+                            updateSceneStatus(scene.scene_id, 'completed');
+                            return { success: true, path: rawVideoFile, scene_id: scene.scene_id };
                         }
                     }
                 } catch (audioErr) {
                     console.error(`[Job ${jobId}] Audio sync error:`, audioErr.message);
-                    generatedVideoPaths.push(rawVideoFile);
+                    updateSceneStatus(scene.scene_id, 'completed');
+                    return { success: true, path: rawVideoFile, scene_id: scene.scene_id };
                 }
             } else {
                 console.warn(`[Job ${jobId}] Scene${scene.scene_id} reported success but no mp4 found.`);
-                failedScenes.push(scene.scene_id);
+                updateSceneStatus(scene.scene_id, 'failed');
+                return { failed: true, scene_id: scene.scene_id };
             }
         } else {
-            failedScenes.push(scene.scene_id);
+            updateSceneStatus(scene.scene_id, 'failed');
+            return { failed: true, scene_id: scene.scene_id };
         }
+    }));
 
-        // Brief pause between scenes to release OS file handles
-        await new Promise(resolve => setTimeout(resolve, 800));
-    }
+    // Promise.all preserves the order of the `scenes` array
+    const generatedVideoPaths = sceneResults.filter(r => r.success).map(r => r.path);
+    const failedScenes = sceneResults.filter(r => r.failed).map(r => r.scene_id);
 
     const finalOutputPath = path.join(jobDir, 'final.mp4');
 
@@ -187,12 +220,33 @@ async function runPipeline(jobId, buffer, numMcqs = 0, numShorts = 0, audioLangu
             updateJob(jobId, { statusMessage: `Generating questions (${numMcqs} MCQ, ${numShorts} Short)...` });
             console.log(`[Job ${jobId}] Generating questions (${numMcqs} MCQ, ${numShorts} Short)...`);
             const questions = await generateQuestionsFromText(text, numMcqs, numShorts);
+
+            // Level Assignment Logic
+            const mcqs = questions.filter(q => q.type === 'mcq');
+            const shorts = questions.filter(q => q.type === 'short');
             
+            const mcqSplit = Math.ceil(mcqs.length / 2);
+            const shortSplit = Math.ceil(shorts.length / 2);
+
+            mcqs.forEach((q, i) => {
+                q.level = i < mcqSplit ? 1 : 2;
+            });
+            shorts.forEach((q, i) => {
+                q.level = (i < shortSplit && mcqs.length > 0) ? 2 : 3;
+                // If no MCQs, put some Shorts in Level 1/2
+                if (mcqs.length === 0) {
+                   if (i < Math.ceil(shorts.length / 3)) q.level = 1;
+                   else if (i < Math.ceil(2 * shorts.length / 3)) q.level = 2;
+                   else q.level = 3;
+                }
+            });
+
             await Question.create({
                 jobId,
-                questions
+                questions,
+                sourceText: text
             });
-            
+
             console.log(`[Job ${jobId}] Questions generated successfully. Count: ${questions?.length || 0}`);
             questionsGenerated = true;
         } catch (qErr) {

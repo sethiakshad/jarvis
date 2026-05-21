@@ -56,7 +56,7 @@ const Navbar = () => {
           fontFamily: "'Space Grotesk', sans-serif",
           fontWeight: 800, fontSize: '1.4rem', letterSpacing: '1px'
         }} className="text-gradient">
-          The Good Ultron
+          IIIT Pune
         </span>
       </div>
       <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
@@ -109,7 +109,7 @@ const Dashboard = () => {
         borderTop: '1px solid var(--glass-border)', color: 'var(--text-muted)'
       }}>
         <p style={{ fontSize: '0.9rem' }}>
-          Project "The Good Ultron" - Cinematic AI Systems © {new Date().getFullYear()}
+          Project "IIIT Pune" - Cinematic AI Systems © {new Date().getFullYear()}
         </p>
       </footer>
     </motion.div>

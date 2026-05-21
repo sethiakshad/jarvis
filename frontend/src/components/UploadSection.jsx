@@ -21,6 +21,7 @@ const UploadSection = () => {
   const [numMcqs, setNumMcqs] = useState(3);
   const [numShorts, setNumShorts] = useState(2);
   const [audioLanguage, setAudioLanguage] = useState('english');
+  const [focusTopic, setFocusTopic] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [pendingFile, setPendingFile] = useState(null);
 
@@ -49,6 +50,7 @@ const UploadSection = () => {
     formData.append('num_mcqs', numMcqs);
     formData.append('num_shorts', numShorts);
     formData.append('audio_language', audioLanguage);
+    formData.append('focus_topic', focusTopic);
 
     try {
       const res = await fetch(`${BACKEND()}/api/pipeline/generate`, {
@@ -328,28 +330,7 @@ const UploadSection = () => {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
-                  <div>
-                    <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '0.5rem' }}>MCQs</label>
-                    <input 
-                      type="number" min="0" max="10" value={numMcqs}
-                      onChange={e => setNumMcqs(e.target.value)}
-                      style={{
-                        width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)',
-                        border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#fff', textAlign: 'center'
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '0.5rem' }}>Short Ans</label>
-                    <input 
-                      type="number" min="0" max="10" value={numShorts}
-                      onChange={e => setNumShorts(e.target.value)}
-                      style={{
-                        width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)',
-                        border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#fff', textAlign: 'center'
-                      }}
-                    />
-                  </div>
+                  {/* Question counts are now hardcoded for the gamified level system (3 MCQs, 2 Short Ans) */}
                   <div style={{ gridColumn: 'span 2' }}>
                     <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '0.5rem' }}>Audio Language</label>
                     <select 
@@ -364,6 +345,18 @@ const UploadSection = () => {
                       <option value="hinglish" style={{ color: '#000' }}>Hinglish (Roman Script)</option>
                       <option value="hindi" style={{ color: '#000' }}>Hindi (Devanagari)</option>
                     </select>
+                  </div>
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '0.5rem' }}>Focus Topic (Optional)</label>
+                    <input 
+                      type="text" value={focusTopic}
+                      onChange={e => setFocusTopic(e.target.value)}
+                      placeholder="e.g. Binary Trees"
+                      style={{
+                        width: '100%', padding: '12px', background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#fff'
+                      }}
+                    />
                   </div>
                 </div>
 
@@ -400,6 +393,8 @@ const UploadSection = () => {
             <div style={{ position: 'relative' }}>
               <input
                 type="text"
+                value={focusTopic}
+                onChange={e => setFocusTopic(e.target.value)}
                 placeholder="What should the AI focus on?"
                 style={{
                   width: '100%', padding: '16px 20px',
@@ -428,6 +423,7 @@ const UploadSection = () => {
                   <motion.span
                     key={i}
                     whileHover={{ scale: 1.05, background: 'rgba(138,43,226,0.2)', borderColor: 'var(--neon-violet)' }}
+                    onClick={() => setFocusTopic(topic)}
                     style={{
                       padding: '8px 16px', background: 'var(--glass-bg)',
                       border: '1px solid var(--glass-border)', borderRadius: '20px',

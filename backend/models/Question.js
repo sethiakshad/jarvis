@@ -15,8 +15,10 @@ const questionSchema = new mongoose.Schema({
       correct_answer: String, // For MCQ correct option (e.g., "A" or the text)
       answer: String, // For short answer explanation
       hint: String, // Clue that helps guide thinking
+      level: { type: Number, min: 1, max: 3, default: 1 }, // Difficulty level
     },
   ],
+  sourceText: String, // Store extracted text for question regeneration on retry
   created_at: {
     type: Date,
     default: Date.now,

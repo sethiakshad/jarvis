@@ -142,7 +142,7 @@ export default function ManimGenerator() {
 
   return (
     <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto', fontFamily: 'sans-serif', backgroundColor: '#f9f9f9', borderRadius: '12px' }}>
-      <h1 style={{ textAlign: 'center', color: '#333' }}>Nexus AI Video Generator</h1>
+      <h1 style={{ textAlign: 'center', color: '#333' }}>IIIT Pune AI Video Generator</h1>
       
       <div style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
         <div style={{ marginBottom: '1rem' }}>

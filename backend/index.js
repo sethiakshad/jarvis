@@ -16,12 +16,16 @@ import FinalVideo from "./models/FinalVideo.js";
 import PipelineLog from "./models/PipelineLog.js";
 import Admin from "./models/Admin.js";
 import Agent from "./models/Agent.js";
+import LearningProject from "./models/LearningProject.js";
+import RevisionSummary from "./models/RevisionSummary.js";
+import QuizAttempt from "./models/QuizAttempt.js";
 
 // Route imports
 import authRoutes from "./routes/auth.js";
 import adminRoutes from "./routes/admin.js";
 import pipelineRoutes from "./routes/pipeline.js";
 import questionRoutes from "./routes/question.js";
+import learningRoutes from "./routes/learning.js";
 
 
 
@@ -38,6 +42,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/pipeline", pipelineRoutes);
 app.use("/api/questions", questionRoutes);
+app.use("/api/learning", learningRoutes);
 
 
 // Serve videos statically

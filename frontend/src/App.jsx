@@ -16,6 +16,7 @@ import Register from './components/Register';
 import AdminLogin from './components/AdminLogin';
 import AdminDashboard from './components/AdminDashboard';
 import Home from './components/Home';
+import MyLearning from './components/MyLearning';
 
 // ── Video Context ────────────────────────────────────────────────────────────
 export const VideoContext = createContext(null);
@@ -70,6 +71,13 @@ const Navbar = () => {
           onMouseOut={e => e.target.style.color = 'var(--text-muted)'}>
           Scene Demo
         </a>
+        {localStorage.getItem('token') && (
+          <a href="/my-learning" style={{ color: 'var(--neon-violet)', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 800, transition: 'color 0.3s' }}
+            onMouseOver={e => e.target.style.color = 'var(--neon-cyan)'}
+            onMouseOut={e => e.target.style.color = 'var(--neon-violet)'}>
+            My Learning
+          </a>
+        )}
         <button className="btn-primary" style={{ padding: '8px 20px' }}
           onClick={() => window.location.href = '/'}>
           System Logout
@@ -128,6 +136,7 @@ const AnimatedRoutes = () => {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin/dashboard" element={<AdminDashboard />} />
+        <Route path="/my-learning" element={<MyLearning />} />
       </Routes>
     </AnimatePresence>
   );

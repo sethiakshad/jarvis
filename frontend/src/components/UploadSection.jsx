@@ -55,6 +55,7 @@ const UploadSection = () => {
     try {
       const res = await fetch(`${BACKEND()}/api/pipeline/generate`, {
         method: 'POST',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` },
         body: formData
       });
       const data = await res.json();

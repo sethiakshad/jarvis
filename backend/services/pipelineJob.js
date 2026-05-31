@@ -8,6 +8,8 @@ import { generateFallbackVideo } from '../utils/fallbackVideoGenerator.js';
 import { syncAudioWithVideo } from './audioService.js';
 import { generateQuestionsFromText } from './questionService.js';
 import Question from '../models/Question.js';
+import LearningProject from '../models/LearningProject.js';
+import { generateRevisionSummary } from './revisionService.js';
 
 
 // Global Job Store
@@ -270,8 +272,23 @@ async function runPipeline(jobId, buffer, numMcqs = 0, numShorts = 0, audioLangu
         questionsGenerated
     });
 
-
-
+    // Update LearningProject if it exists (non-blocking)
+    LearningProject.findOneAndUpdate(
+        { jobId },
+        { 
+            pipelineStatus: 'done',
+            videoUrl: `/videos/${jobId}/final.mp4`, 
+            scenesTotal: scenes.length, 
+            scenesRendered: generatedVideoPaths.length 
+        },
+        { new: false }
+    ).then(async doc => {
+        if (doc && questionsGenerated) {
+            // Generate revision summary async — never blocks video delivery
+            const qDoc = await Question.findOne({ jobId }).lean();
+            if (qDoc?.sourceText) generateRevisionSummary(jobId, qDoc.sourceText).catch(console.error);
+        }
+    }).catch(console.error);
 
     console.log(`[Job ${jobId}] Complete → /videos/${jobId}/final.mp4`);
 }

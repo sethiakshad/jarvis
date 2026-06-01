@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Play, BookOpen, Clock, Activity, Bookmark, Trash2, Search, Target, Video } from 'lucide-react';
 import RevisionModal from './RevisionModal';
 import PracticeModal from './PracticeModal';
+import { useVideo } from '../App';
 
 const BACKEND = () => {
     const raw = import.meta.env.VITE_BACKEND_SERVER || 'http://localhost:4000';
@@ -18,6 +19,7 @@ const MyLearning = () => {
     const [activeRevision, setActiveRevision] = useState(null); // jobId
     const [activePractice, setActivePractice] = useState(null); // jobId
     const navigate = useNavigate();
+    const { setVideoData } = useVideo();
 
     const fetchProjects = async () => {
         try {
@@ -64,10 +66,20 @@ const MyLearning = () => {
         } catch (err) {}
     };
 
-    const navigateToVideo = (jobId) => {
-        // Just a simple routing if we wanted, or we could load it in a modal.
-        // For now, alert that it would load the VideoPreview.
-        alert(`Opening video player for job ${jobId}`);
+    const navigateToVideo = (project) => {
+        setVideoData({
+            url: `${BACKEND()}${project.videoUrl}`,
+            statusMessage: `Loaded from library`,
+            scenesRendered: project.scenesRendered,
+            scenesTotal: project.scenesTotal,
+            jobId: project.jobId
+        });
+        navigate('/dashboard');
+        setTimeout(() => {
+            const el = document.getElementById('video-preview');
+            if (el) el.scrollIntoView({ behavior: 'smooth' });
+            else window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }, 300);
     };
 
     // Filter logic
@@ -203,7 +215,7 @@ const MyLearning = () => {
 
                                         {/* Actions */}
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
-                                            <button onClick={() => navigateToVideo(p.jobId)} style={{ padding: '8px', background: 'rgba(0, 210, 255, 0.1)', border: '1px solid var(--neon-blue)', color: 'var(--neon-blue)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.85rem' }}>
+                                            <button onClick={() => navigateToVideo(p)} style={{ padding: '8px', background: 'rgba(0, 210, 255, 0.1)', border: '1px solid var(--neon-blue)', color: 'var(--neon-blue)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.85rem' }}>
                                                 <Play size={14} /> Watch
                                             </button>
                                             <button onClick={() => setActiveRevision(p)} style={{ padding: '8px', background: 'rgba(138, 43, 226, 0.1)', border: '1px solid var(--neon-violet)', color: 'var(--neon-violet)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.85rem' }}>
